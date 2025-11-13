@@ -14,9 +14,6 @@ type Config struct {
 	BeaconNodeURL    string
 	ExecutionNodeURL string
 
-	// Validator configuration
-	ValidatorIndices []uint64
-
 	// Cache configuration
 	CacheResetInterval time.Duration
 
@@ -32,7 +29,6 @@ func DefaultConfig() *Config {
 		ServerPort:          "8080",
 		BeaconNodeURL:       "http://localhost:5052",
 		ExecutionNodeURL:    "http://localhost:8545",
-		ValidatorIndices:    []uint64{},
 		CacheResetInterval:  24 * time.Hour,
 		EpochUpdateInterval: 12 * time.Second, // ~1 slot on mainnet
 		StartEpoch:          1,

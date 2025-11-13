@@ -6,8 +6,6 @@ import (
 	"endurance-rewards/internal/rewards"
 	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"log/slog"
@@ -47,7 +45,7 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/health", s.healthHandler)
 
 	// Rewards endpoint
-	s.router.GET("/rewards", s.rewardsHandler)
+	s.router.POST("/rewards", s.rewardsHandler)
 }
 
 // Start starts the HTTP server
@@ -91,56 +89,36 @@ func (s *Server) healthHandler(c *gin.Context) {
 	})
 }
 
+// RewardsRequest represents the request body for rewards query
+type RewardsRequest struct {
+	Validators []uint64 `json:"validators" binding:"required"`
+}
+
 // rewardsHandler handles reward queries
 func (s *Server) rewardsHandler(c *gin.Context) {
-	// Parse validator indices from query parameter
-	indicesStr := c.Query("validators")
+	var req RewardsRequest
 
-	if indicesStr == "" {
-		// If no validators specified, return all cached rewards
-		allRewards := s.rewardsService.GetAllRewards()
-		c.JSON(http.StatusOK, gin.H{
-			"count":   len(allRewards),
-			"rewards": allRewards,
-		})
-		return
-	}
-
-	// Parse comma-separated validator indices
-	indicesParts := strings.Split(indicesStr, ",")
-	validatorIndices := make([]uint64, 0, len(indicesParts))
-
-	for _, part := range indicesParts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-
-		index, err := strconv.ParseUint(part, 10, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": fmt.Sprintf("Invalid validator index: %s", part),
-			})
-			return
-		}
-
-		validatorIndices = append(validatorIndices, index)
-	}
-
-	if len(validatorIndices) == 0 {
+	// Parse JSON request body
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "No valid validator indices provided",
+			"error": "Invalid request body: validators array is required",
 		})
 		return
 	}
 
-	// Get rewards from cache
-	rewardsData := s.rewardsService.GetRewards(validatorIndices)
+	if len(req.Validators) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Validators array cannot be empty",
+		})
+		return
+	}
+
+	// Get total rewards (EL+CL) for each requested validator
+	validatorRewards := s.rewardsService.GetTotalRewards(req.Validators)
 
 	c.JSON(http.StatusOK, gin.H{
-		"count":     len(rewardsData),
-		"requested": len(validatorIndices),
-		"rewards":   rewardsData,
+		"validator_count": len(req.Validators),
+		"rewards":         validatorRewards,
 	})
 }
 

@@ -109,48 +109,68 @@ GET /health
 
 ### Get Rewards
 
-Query validator rewards:
+Query validator rewards (returns the sum of EL+CL rewards for each validator):
 
 ```bash
-GET /rewards?validators=1,2,3
+POST /rewards
 ```
 
-**Query Parameters:**
-- `validators` (optional): Comma-separated list of validator indices
-  - If omitted, returns all cached rewards
-  - Example: `validators=100,200,300`
+**Request Body:**
+```json
+{
+  "validators": [1, 2, 3]
+}
+```
+
+**Parameters:**
+- `validators` (required): Array of validator indices (uint64)
 
 **Response:**
 ```json
 {
-  "count": 3,
-  "requested": 3,
+  "validator_count": 3,
   "rewards": {
     "1": {
-      "TotalClRewards": 1000000,
-      "AttestationReward": 500000,
-      "ProposerReward": 500000,
-      "SyncCommitteeReward": 0,
-      "SlashingReward": 0,
-      "TotalElRewards": 100000
+      "validator_index": 1,
+      "cl_rewards": 1000000,
+      "el_rewards": "5000000000000000000",
+      "el_rewards_gwei": 5000000000,
+      "total_rewards": "6000000000000000000",
+      "total_rewards_gwei": 6000001000
     },
-    "2": { ... },
+    "2": {
+      "validator_index": 2,
+      "cl_rewards": 950000,
+      "el_rewards": "3000000000000000000",
+      "el_rewards_gwei": 3000000000,
+      "total_rewards": "3950000000000000000",
+      "total_rewards_gwei": 3950000950
+    },
     "3": { ... }
   }
 }
 ```
 
+**Response Fields:**
+- `validator_index`: The validator index
+- `cl_rewards`: Consensus Layer rewards in gwei
+- `el_rewards`: Execution Layer rewards in wei (as string for precision)
+- `el_rewards_gwei`: Execution Layer rewards in gwei
+- `total_rewards`: Total rewards (CL + EL) in wei (as string for precision)
+- `total_rewards_gwei`: Total rewards (CL + EL) in gwei
+
 **Example Requests:**
 
 ```bash
-# Get rewards for specific validators
-curl "http://localhost:8080/rewards?validators=1,2,3"
-
-# Get all cached rewards
-curl "http://localhost:8080/rewards"
-
 # Get rewards for a single validator
-curl "http://localhost:8080/rewards?validators=12345"
+curl -X POST http://localhost:8080/rewards \
+  -H "Content-Type: application/json" \
+  -d '{"validators": [12345]}'
+
+# Get rewards for multiple validators
+curl -X POST http://localhost:8080/rewards \
+  -H "Content-Type: application/json" \
+  -d '{"validators": [100, 200, 300, 400]}'
 ```
 
 ## How It Works
