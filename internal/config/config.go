@@ -31,6 +31,6 @@ func DefaultConfig() *Config {
 		ExecutionNodeURL:    "http://localhost:8545",
 		CacheResetInterval:  24 * time.Hour,
 		EpochUpdateInterval: 12 * time.Second, // ~1 slot on mainnet
-		StartEpoch:          1,
+		StartEpoch:          0,
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"endurance-rewards/internal/server"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"log/slog"
@@ -69,6 +70,14 @@ func loadConfig() *config.Config {
 	}
 	if execURL := os.Getenv("EXECUTION_NODE_URL"); execURL != "" {
 		cfg.ExecutionNodeURL = execURL
+	}
+	if startEpoch := os.Getenv("START_EPOCH"); startEpoch != "" {
+		startEpochInt, err := strconv.Atoi(startEpoch)
+		if err != nil {
+			slog.Error("Invalid START_EPOCH value", "error", err)
+			os.Exit(1)
+		}
+		cfg.StartEpoch = uint64(startEpochInt)
 	}
 
 	// Log configuration
