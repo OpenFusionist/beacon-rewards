@@ -9,9 +9,14 @@ import (
 	"syscall"
 
 	"log/slog"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load .env file (ignore error if file doesn't exist)
+	_ = godotenv.Load()
+
 	// Setup logging
 	slog.Info("Starting Endurance Rewards Service")
 
@@ -49,7 +54,6 @@ func main() {
 }
 
 // loadConfig loads the application configuration
-// In a production environment, this would read from environment variables or config files
 func loadConfig() *config.Config {
 	cfg := config.DefaultConfig()
 

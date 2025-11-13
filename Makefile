@@ -1,5 +1,7 @@
 .PHONY: build run clean test lint deps
 
+include .env
+
 # Build the application
 build:
 	go build -o bin/rewards ./cmd/rewards
@@ -25,8 +27,4 @@ deps:
 	go mod download
 	go mod tidy
 
-# Run with custom configuration
-run-custom:
-	@echo "Running with custom configuration..."
-	SERVER_PORT=9090 go run ./cmd/rewards/main.go
 

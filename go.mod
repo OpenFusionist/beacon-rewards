@@ -1,10 +1,11 @@
 module endurance-rewards
 
-go 1.23
+go 1.23.7
 
 require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/gobitfly/eth-rewards v0.1.2-0.20230403064929-411ddc40a5f7
+	github.com/joho/godotenv v1.5.1
 )
 
 require (
