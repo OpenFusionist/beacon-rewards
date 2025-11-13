@@ -35,6 +35,6 @@ func DefaultConfig() *Config {
 		ValidatorIndices:    []uint64{},
 		CacheResetInterval:  24 * time.Hour,
 		EpochUpdateInterval: 12 * time.Second, // ~1 slot on mainnet
-		StartEpoch:          0,
+		StartEpoch:          1,
 	}
 }
