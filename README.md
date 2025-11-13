@@ -133,17 +133,13 @@ POST /rewards
     "1": {
       "validator_index": 1,
       "cl_rewards": 1000000,
-      "el_rewards": "5000000000000000000",
       "el_rewards_gwei": 5000000000,
-      "total_rewards": "6000000000000000000",
       "total_rewards_gwei": 6000001000
     },
     "2": {
       "validator_index": 2,
       "cl_rewards": 950000,
-      "el_rewards": "3000000000000000000",
       "el_rewards_gwei": 3000000000,
-      "total_rewards": "3950000000000000000",
       "total_rewards_gwei": 3950000950
     },
     "3": { ... }
@@ -153,10 +149,8 @@ POST /rewards
 
 **Response Fields:**
 - `validator_index`: The validator index
-- `cl_rewards`: Consensus Layer rewards in gwei
-- `el_rewards`: Execution Layer rewards in wei (as string for precision)
+- `cl_rewards_gwei`: Consensus Layer rewards in gwei
 - `el_rewards_gwei`: Execution Layer rewards in gwei
-- `total_rewards`: Total rewards (CL + EL) in wei (as string for precision)
 - `total_rewards_gwei`: Total rewards (CL + EL) in gwei
 
 **Example Requests:**

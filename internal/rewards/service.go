@@ -215,10 +215,8 @@ func (s *Service) GetAllRewards() map[uint64]*types.ValidatorEpochIncome {
 // ValidatorReward represents the total reward (EL + CL) for a single validator
 type ValidatorReward struct {
 	ValidatorIndex   uint64 `json:"validator_index"`
-	ClRewards        int64  `json:"cl_rewards"`         // CL rewards in gwei
-	ElRewards        string `json:"el_rewards"`         // EL rewards in wei as string
+	ClRewardsGwei        int64  `json:"cl_rewards_gwei"`         // CL rewards in gwei
 	ElRewardsGwei    int64  `json:"el_rewards_gwei"`    // EL rewards in gwei
-	TotalRewards     string `json:"total_rewards"`      // Total (CL + EL) in wei as string
 	TotalRewardsGwei int64  `json:"total_rewards_gwei"` // Total (CL + EL) in gwei
 }
 
@@ -239,20 +237,18 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64) map[uint64]*Validat
 
 			// Calculate CL rewards (in gwei)
 			clRewardsGwei := income.TotalClRewards()
-			reward.ClRewards = clRewardsGwei
+			reward.ClRewardsGwei = clRewardsGwei
 
 			// Get EL rewards (in wei)
 			elRewardsWei := big.NewInt(0)
 			if len(income.TxFeeRewardWei) > 0 {
 				elRewardsWei.SetBytes(income.TxFeeRewardWei)
 			}
-			reward.ElRewards = elRewardsWei.String()
 			reward.ElRewardsGwei = new(big.Int).Div(elRewardsWei, gweiDivisor).Int64()
 
 			// Calculate total rewards (CL + EL) in wei
 			clRewardsWei := new(big.Int).Mul(big.NewInt(clRewardsGwei), gweiToWei)
 			totalRewardsWei := new(big.Int).Add(clRewardsWei, elRewardsWei)
-			reward.TotalRewards = totalRewardsWei.String()
 			reward.TotalRewardsGwei = new(big.Int).Div(totalRewardsWei, gweiDivisor).Int64()
 
 			result[index] = reward
