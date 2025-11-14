@@ -15,11 +15,37 @@ import (
 	"github.com/joho/godotenv"
 )
 
+func setupLoggerFromEnv() {
+	levelStr := os.Getenv("LOG_LEVEL")
+	var level slog.Level
+	switch levelStr {
+	case "debug", "DEBUG":
+		level = slog.LevelDebug
+	case "warn", "WARN", "warning", "WARNING":
+		level = slog.LevelWarn
+	case "error", "ERROR":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	format := os.Getenv("LOG_FORMAT")
+	var handler slog.Handler
+	if format == "json" || format == "JSON" {
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	} else {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	}
+
+	slog.SetDefault(slog.New(handler))
+}
+
 func main() {
 	// Load .env file (ignore error if file doesn't exist)
 	_ = godotenv.Load()
 
 	// Setup logging
+	setupLoggerFromEnv()
 	slog.Info("Starting Endurance Rewards Service")
 
 	// Load configuration
