@@ -42,8 +42,11 @@ func (d *DB) Close() {
 
 // WithdrawalStat represents aggregated deposits for a withdrawal address.
 type WithdrawalStat struct {
-	Address     string `json:"address"`
-	TotalAmount int64  `json:"total_amount"`
+	Address         string `json:"address"`
+	ValidatorsTotal int64  `json:"validators_total"`
+	Slashed         int64  `json:"slashed"`
+	VoluntaryExited int64  `json:"voluntary_exited"`
+	Active          int64  `json:"active"`
 }
 
 // TopWithdrawalAddresses aggregates deposits by normalized withdrawal address and returns top N by amount.
@@ -58,12 +61,15 @@ func (d *DB) TopWithdrawalAddresses(ctx context.Context, limit int) ([]Withdrawa
 
 	const q = `
 SELECT
-  '0x' || encode(substr(withdrawalcredentials, 13, 20), 'hex') AS address,
-  SUM(amount)::bigint AS total_amount
-FROM deposits
-WHERE get_byte(withdrawalcredentials, 0) IN (1, 2)
+  '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') AS address,
+  COUNT(DISTINCT v.validator_index) AS validators_total,
+  COUNT(DISTINCT v.validator_index) FILTER (WHERE v.slashed) AS slashed,
+  COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance = 0) AS voluntary_exited,
+  COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance > 0) AS active
+FROM validators v
+WHERE get_byte(v.withdrawal_credentials, 0) IN (1, 2)
 GROUP BY address
-ORDER BY total_amount DESC
+ORDER BY validators_total DESC
 LIMIT $1`
 
 	rows, err := d.db.QueryContext(ctx, q, limit)
@@ -75,7 +81,7 @@ LIMIT $1`
 	results := make([]WithdrawalStat, 0, limit)
 	for rows.Next() {
 		var s WithdrawalStat
-		if err := rows.Scan(&s.Address, &s.TotalAmount); err != nil {
+		if err := rows.Scan(&s.Address, &s.ValidatorsTotal, &s.Slashed, &s.VoluntaryExited, &s.Active); err != nil {
 			return nil, err
 		}
 		results = append(results, s)
