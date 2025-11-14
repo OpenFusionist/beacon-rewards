@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	"log/slog"
 
@@ -79,9 +80,28 @@ func loadConfig() *config.Config {
 		}
 		cfg.StartEpoch = uint64(startEpochInt)
 	}
+	if bfConc := os.Getenv("BACKFILL_CONCURRENCY"); bfConc != "" {
+		bfConcInt, err := strconv.Atoi(bfConc)
+		if err != nil {
+			slog.Error("Invalid BACKFILL_CONCURRENCY value", "error", err)
+			os.Exit(1)
+		}
+		if bfConcInt <= 0 {
+			bfConcInt = 1
+		}
+		cfg.BackfillConcurrency = bfConcInt
+	}
+	if epochInterval := os.Getenv("EPOCH_UPDATE_INTERVAL"); epochInterval != "" {
+		dur, err := time.ParseDuration(epochInterval)
+		if err != nil {
+			slog.Error("Invalid EPOCH_UPDATE_INTERVAL value", "error", err)
+			os.Exit(1)
+		}
+		cfg.EpochUpdateInterval = dur
+	}
 
 	// Log configuration
-	slog.Info("Configuration loaded", "server_address", cfg.ServerAddress, "server_port", cfg.ServerPort, "beacon_node", cfg.BeaconNodeURL, "execution_node", cfg.ExecutionNodeURL, "cache_reset_interval", cfg.CacheResetInterval, "epoch_update_interval", cfg.EpochUpdateInterval)
+	slog.Info("Configuration loaded", "server_address", cfg.ServerAddress, "server_port", cfg.ServerPort, "beacon_node", cfg.BeaconNodeURL, "execution_node", cfg.ExecutionNodeURL, "cache_reset_interval", cfg.CacheResetInterval, "epoch_update_interval", cfg.EpochUpdateInterval, "backfill_concurrency", cfg.BackfillConcurrency, "start_epoch", cfg.StartEpoch)
 
 	return cfg
 }

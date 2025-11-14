@@ -3,14 +3,17 @@ package rewards
 import (
 	"context"
 	"endurance-rewards/internal/config"
+	"fmt"
 	"log/slog"
 	"math/big"
 	"sync"
 	"time"
 
-	eth_rewards "github.com/gobitfly/eth-rewards"
 	"github.com/gobitfly/eth-rewards/beacon"
+	"github.com/gobitfly/eth-rewards/elrewards"
 	"github.com/gobitfly/eth-rewards/types"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -52,8 +55,29 @@ func NewService(cfg *config.Config) *Service {
 func (s *Service) Start() error {
 	slog.Info("Starting rewards service")
 
+	// Trigger backfill to current UTC 00:00 epoch (non-blocking)
+	go s.backfillToUTCMidnight()
+
+	// Determine starting epoch for live processing, avoiding overlap with backfill
+	now := time.Now().UTC()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	midnightEpoch := s.getCurrentEpoch(midnight)
+
+	var startFrom uint64
+	switch {
+	case s.config.StartEpoch == 0:
+		// Start from the current epoch
+		startFrom = s.getCurrentEpoch(time.Now())
+	case s.config.StartEpoch <= midnightEpoch:
+		// If backfilling [StartEpoch..midnightEpoch], start live processing from midnightEpoch+1
+		startFrom = midnightEpoch + 1
+	default:
+		// If backfilling (midnightEpoch+1..StartEpoch), start from StartEpoch+1
+		startFrom = s.config.StartEpoch + 1
+	}
+
 	// Start the epoch processor
-	go s.epochProcessor()
+	go s.epochProcessor(startFrom)
 
 	// Start the cache reset timer
 	go s.cacheResetTimer()
@@ -68,16 +92,12 @@ func (s *Service) Stop() {
 }
 
 // epochProcessor continuously processes epochs and updates the cache
-func (s *Service) epochProcessor() {
+func (s *Service) epochProcessor(startFrom uint64) {
 	ticker := time.NewTicker(s.config.EpochUpdateInterval)
 	defer ticker.Stop()
 
-	currentEpoch := s.config.StartEpoch
-	if currentEpoch == 0 {
-		// Get current epoch from beacon chain
-		currentEpoch = s.getCurrentEpoch(time.Now())
-		slog.Info("Starting from current epoch", "epoch", currentEpoch)
-	}
+	currentEpoch := startFrom
+	slog.Info("Live epoch processor starting", "start_epoch", currentEpoch, "interval", s.config.EpochUpdateInterval)
 
 	for {
 		select {
@@ -90,25 +110,109 @@ func (s *Service) epochProcessor() {
 	}
 }
 
+// backfillToUTCMidnight backfills epochs from StartEpoch up to current UTC 00:00 epoch using a worker pool
+func (s *Service) backfillToUTCMidnight() {
+	startTime := time.Now()
+	now := time.Now().UTC()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	midnightEpoch := s.getCurrentEpoch(midnight)
+
+	start := s.config.StartEpoch
+	if start == 0 {
+		slog.Info("Backfill skipped", "start_epoch", start, "midnight_epoch", midnightEpoch)
+		return
+	}
+
+	var from, to uint64
+	if start <= midnightEpoch {
+		from = start
+		to = midnightEpoch
+	} else {
+		// typical usage: start_epoch > midnight_epoch → backfill (midnight_epoch+1 .. start_epoch)
+		from = midnightEpoch + 1
+		to = start
+	}
+	if from > to {
+		slog.Info("Backfill skipped (empty range)", "from_epoch", from, "to_epoch", to)
+		return
+	}
+
+	workerCount := s.config.BackfillConcurrency
+	if workerCount <= 0 {
+		workerCount = 1
+	}
+
+	total := to - from + 1
+	slog.Info("Starting backfill", "from_epoch", from, "to_epoch", to, "count", total, "concurrency", workerCount)
+
+	jobs := make(chan uint64, workerCount*16)
+	var wg sync.WaitGroup
+
+	// Workers
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-s.ctx.Done():
+					return
+				case epoch, ok := <-jobs:
+					if !ok {
+						return
+					}
+					s.processEpoch(epoch)
+				}
+			}
+		}()
+	}
+
+	// Producer
+produce:
+	for epoch := from; epoch <= to; epoch++ {
+		select {
+		case <-s.ctx.Done():
+			break produce
+		case jobs <- epoch:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	if s.ctx.Err() != nil {
+		slog.Info("Backfill cancelled", "from_epoch", from, "to_epoch", to, "duration", time.Since(startTime))
+		return
+	}
+
+	slog.Info("Backfill completed", "from_epoch", from, "to_epoch", to, "duration", time.Since(startTime))
+}
+
 // processEpoch fetches rewards for a specific epoch and updates the cache
 func (s *Service) processEpoch(epoch uint64) {
+	startTime := time.Now()
 	slog.Debug("Processing epoch", "epoch", epoch)
 
 	// Get rewards for the epoch
-	rewards, err := eth_rewards.GetRewardsForEpoch(epoch, s.beaconCL, *s.elClient)
+	rewardsStart := time.Now()
+	rewards, err := GetRewardsForEpoch(epoch, s.beaconCL, *s.elClient)
+	rewardsDuration := time.Since(rewardsStart)
 	if err != nil {
-		slog.Error("Failed to get rewards for epoch", "epoch", epoch, "error", err)
+		slog.Error("Failed to get rewards for epoch", "epoch", epoch, "error", err, "get_rewards_duration", rewardsDuration)
 		return
 	}
 
 	// Update cache with rewards for all validators (using accumulation)
+	accumulateStart := time.Now()
 	s.cacheMux.Lock()
-	defer s.cacheMux.Unlock()
 
 	for validatorIndex, income := range rewards {
 		s.accumulateRewards(validatorIndex, income)
 	}
-	slog.Info("Updated cache with all validators", "epoch", epoch, "validators", len(rewards))
+	s.cacheMux.Unlock()
+	accumulateDuration := time.Since(accumulateStart)
+
+	totalDuration := time.Since(startTime)
+	slog.Info("Updated cache with all validators", "epoch", epoch, "validators", len(rewards), "get_rewards_duration", rewardsDuration, "accumulate_duration", accumulateDuration, "total_duration", totalDuration)
 }
 
 // accumulateRewards adds the new rewards to existing cached rewards
@@ -215,7 +319,7 @@ func (s *Service) GetAllRewards() map[uint64]*types.ValidatorEpochIncome {
 // ValidatorReward represents the total reward (EL + CL) for a single validator
 type ValidatorReward struct {
 	ValidatorIndex   uint64 `json:"validator_index"`
-	ClRewardsGwei        int64  `json:"cl_rewards_gwei"`         // CL rewards in gwei
+	ClRewardsGwei    int64  `json:"cl_rewards_gwei"`    // CL rewards in gwei
 	ElRewardsGwei    int64  `json:"el_rewards_gwei"`    // EL rewards in gwei
 	TotalRewardsGwei int64  `json:"total_rewards_gwei"` // Total (CL + EL) in gwei
 }
@@ -265,4 +369,153 @@ func (s *Service) getCurrentEpoch(ts time.Time) uint64 {
 	}
 	return uint64((ts.Unix() - int64(GENESIS_TIMESTAMP)) / int64(SECONDS_PER_SLOT) / int64(SLOTS_PER_EPOCH))
 
+}
+
+// GetRewardsForEpoch fetches rewards for a specific epoch from the beacon chain and execution layer
+func GetRewardsForEpoch(epoch uint64, client *beacon.Client, elEndpoint string) (map[uint64]*types.ValidatorEpochIncome, error) {
+	proposerAssignments, err := client.ProposerAssignments(epoch)
+	if err != nil {
+		return nil, err
+	}
+
+	slotsPerEpoch := uint64(len(proposerAssignments.Data))
+
+	startSlot := epoch * slotsPerEpoch
+	endSlot := startSlot + slotsPerEpoch - 1
+
+	g := new(errgroup.Group)
+	g.SetLimit(32)
+
+	slotsToProposerIndex := make(map[uint64]uint64)
+	for _, pa := range proposerAssignments.Data {
+		slotsToProposerIndex[uint64(pa.Slot)] = uint64(pa.ValidatorIndex)
+	}
+
+	rewardsMux := &sync.Mutex{}
+
+	rewards := make(map[uint64]*types.ValidatorEpochIncome)
+
+	for i := startSlot; i <= endSlot; i++ {
+		i := i
+
+		g.Go(func() error {
+			proposer, found := slotsToProposerIndex[i]
+			if !found {
+				return fmt.Errorf("assigned proposer for slot %v not found", i)
+			}
+
+			execBlockNumber, err := client.ExecutionBlockNumber(i)
+			rewardsMux.Lock()
+			if rewards[proposer] == nil {
+				rewards[proposer] = &types.ValidatorEpochIncome{}
+			}
+			rewardsMux.Unlock()
+			if err != nil {
+				if err == types.ErrBlockNotFound {
+					rewardsMux.Lock()
+					rewards[proposer].ProposalsMissed += 1
+					rewardsMux.Unlock()
+					return nil
+				} else if err != types.ErrSlotPreMerge { // ignore
+					logrus.Errorf("error retrieving execution block number for slot %v: %v", i, err)
+					return err
+				}
+			} else {
+				txFeeIncome, err := elrewards.GetELRewardForBlock(execBlockNumber, elEndpoint)
+				if err != nil {
+					return err
+				}
+
+				rewardsMux.Lock()
+				rewards[proposer].TxFeeRewardWei = txFeeIncome.Bytes()
+				rewardsMux.Unlock()
+			}
+
+			syncRewards, err := client.SyncCommitteeRewards(i)
+			if err != nil {
+				if err != types.ErrSlotPreSyncCommittees {
+					return err
+				}
+			}
+
+			rewardsMux.Lock()
+			if syncRewards != nil {
+				for _, sr := range syncRewards.Data {
+					if rewards[sr.ValidatorIndex] == nil {
+						rewards[sr.ValidatorIndex] = &types.ValidatorEpochIncome{}
+					}
+
+					if sr.Reward > 0 {
+						rewards[sr.ValidatorIndex].SyncCommitteeReward += uint64(sr.Reward)
+					} else {
+						rewards[sr.ValidatorIndex].SyncCommitteePenalty += uint64(sr.Reward * -1)
+					}
+				}
+			}
+			rewardsMux.Unlock()
+
+			rewardsMux.Lock()
+			blockRewards, err := client.BlockRewards(i)
+			if err != nil {
+				rewardsMux.Unlock()
+				return err
+			}
+
+			if rewards[blockRewards.Data.ProposerIndex] == nil {
+				rewards[blockRewards.Data.ProposerIndex] = &types.ValidatorEpochIncome{}
+			}
+			rewards[blockRewards.Data.ProposerIndex].ProposerAttestationInclusionReward += blockRewards.Data.Attestations
+			rewards[blockRewards.Data.ProposerIndex].ProposerSlashingInclusionReward += blockRewards.Data.AttesterSlashings + blockRewards.Data.ProposerSlashings
+			rewards[blockRewards.Data.ProposerIndex].ProposerSyncInclusionReward += blockRewards.Data.SyncAggregate
+			rewardsMux.Unlock()
+			return nil
+		})
+	}
+
+	g.Go(func() error {
+		ar, err := client.AttestationRewards(epoch)
+		if err != nil {
+			return err
+		}
+		rewardsMux.Lock()
+		defer rewardsMux.Unlock()
+		for _, ar := range ar.Data.TotalRewards {
+			if rewards[ar.ValidatorIndex] == nil {
+				rewards[ar.ValidatorIndex] = &types.ValidatorEpochIncome{}
+			}
+
+			if ar.Head >= 0 {
+				rewards[ar.ValidatorIndex].AttestationHeadReward = uint64(ar.Head)
+			} else {
+				return fmt.Errorf("retrieved negative attestation head reward for validator %v: %v", ar.ValidatorIndex, ar.Head)
+			}
+
+			if ar.Source > 0 {
+				rewards[ar.ValidatorIndex].AttestationSourceReward = uint64(ar.Source)
+			} else {
+				rewards[ar.ValidatorIndex].AttestationSourcePenalty = uint64(ar.Source * -1)
+			}
+
+			if ar.Target > 0 {
+				rewards[ar.ValidatorIndex].AttestationTargetReward = uint64(ar.Target)
+			} else {
+				rewards[ar.ValidatorIndex].AttestationTargetPenalty = uint64(ar.Target * -1)
+			}
+
+			if ar.InclusionDelay <= 0 {
+				rewards[ar.ValidatorIndex].FinalityDelayPenalty = uint64(ar.InclusionDelay * -1)
+			} else {
+				return fmt.Errorf("retrieved positive inclusion delay penalty for validator %v: %v", ar.ValidatorIndex, ar.InclusionDelay)
+			}
+		}
+
+		return nil
+	})
+
+	err = g.Wait()
+	if err != nil {
+		return nil, err
+	}
+
+	return rewards, nil
 }

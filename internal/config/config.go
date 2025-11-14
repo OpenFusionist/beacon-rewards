@@ -20,6 +20,9 @@ type Config struct {
 	// Epoch processing configuration
 	EpochUpdateInterval time.Duration
 	StartEpoch          uint64
+
+	// Backfill configuration
+	BackfillConcurrency int
 }
 
 // DefaultConfig returns a default configuration
@@ -32,5 +35,6 @@ func DefaultConfig() *Config {
 		CacheResetInterval:  24 * time.Hour,
 		EpochUpdateInterval: 12 * time.Second, // ~1 slot on mainnet
 		StartEpoch:          0,
+		BackfillConcurrency: 16,
 	}
 }
