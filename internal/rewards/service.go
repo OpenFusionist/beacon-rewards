@@ -384,7 +384,7 @@ func GetRewardsForEpoch(epoch uint64, client *beacon.Client, elEndpoint string) 
 	endSlot := startSlot + slotsPerEpoch - 1
 
 	g := new(errgroup.Group)
-	g.SetLimit(32)
+	// g.SetLimit(32)
 
 	slotsToProposerIndex := make(map[uint64]uint64)
 	for _, pa := range proposerAssignments.Data {
@@ -404,76 +404,112 @@ func GetRewardsForEpoch(epoch uint64, client *beacon.Client, elEndpoint string) 
 				return fmt.Errorf("assigned proposer for slot %v not found", i)
 			}
 
-			execBlockNumber, err := client.ExecutionBlockNumber(i)
-			rewardsMux.Lock()
-			if rewards[proposer] == nil {
-				rewards[proposer] = &types.ValidatorEpochIncome{}
-			}
-			rewardsMux.Unlock()
-			if err != nil {
-				if err == types.ErrBlockNotFound {
-					rewardsMux.Lock()
-					rewards[proposer].ProposalsMissed += 1
-					rewardsMux.Unlock()
-					return nil
-				} else if err != types.ErrSlotPreMerge { // ignore
-					logrus.Errorf("error retrieving execution block number for slot %v: %v", i, err)
-					return err
+			// Run per-slot RPCs in parallel:
+			// 1) Execution block number (+ ELRewardForBlock if exists)
+			// 2) SyncCommitteeRewards
+			// 3) BlockRewards
+			slotGroup := new(errgroup.Group)
+
+			// 1) Execution Layer path
+			slotGroup.Go(func() error {
+				execStart := time.Now()
+				execBlockNumber, err := client.ExecutionBlockNumber(i)
+				slog.Debug("Fetched ExecutionBlockNumber", "slot", i, "duration", time.Since(execStart))
+
+				// Ensure proposer entry exists (needed for missed proposal increment below)
+				rewardsMux.Lock()
+				if rewards[proposer] == nil {
+					rewards[proposer] = &types.ValidatorEpochIncome{}
 				}
-			} else {
+				rewardsMux.Unlock()
+
+				if err != nil {
+					if err == types.ErrBlockNotFound {
+						rewardsMux.Lock()
+						rewards[proposer].ProposalsMissed += 1
+						rewardsMux.Unlock()
+						return nil
+					} else if err != types.ErrSlotPreMerge { // ignore pre-merge
+						logrus.Errorf("error retrieving execution block number for slot %v: %v", i, err)
+						return err
+					}
+					// Pre-merge: nothing to fetch from EL
+					return nil
+				}
+
+				txFeeIncomeStart := time.Now()
 				txFeeIncome, err := elrewards.GetELRewardForBlock(execBlockNumber, elEndpoint)
+				slog.Debug("Fetched ELRewardForBlock", "slot", i, "duration", time.Since(txFeeIncomeStart))
 				if err != nil {
 					return err
 				}
 
 				rewardsMux.Lock()
+				// proposer entry already ensured above
 				rewards[proposer].TxFeeRewardWei = txFeeIncome.Bytes()
 				rewardsMux.Unlock()
-			}
+				return nil
+			})
 
-			syncRewards, err := client.SyncCommitteeRewards(i)
-			if err != nil {
-				if err != types.ErrSlotPreSyncCommittees {
+			// 2) SyncCommitteeRewards
+			slotGroup.Go(func() error {
+				syncRewardsStart := time.Now()
+				syncRewards, err := client.SyncCommitteeRewards(i)
+				slog.Debug("Fetched SyncCommitteeRewards", "slot", i, "duration", time.Since(syncRewardsStart))
+				if err != nil {
+					if err != types.ErrSlotPreSyncCommittees {
+						return err
+					}
+					return nil
+				}
+
+				if syncRewards != nil {
+					rewardsMux.Lock()
+					for _, sr := range syncRewards.Data {
+						if rewards[sr.ValidatorIndex] == nil {
+							rewards[sr.ValidatorIndex] = &types.ValidatorEpochIncome{}
+						}
+
+						if sr.Reward > 0 {
+							rewards[sr.ValidatorIndex].SyncCommitteeReward += uint64(sr.Reward)
+						} else {
+							rewards[sr.ValidatorIndex].SyncCommitteePenalty += uint64(sr.Reward * -1)
+						}
+					}
+					rewardsMux.Unlock()
+				}
+				return nil
+			})
+
+			// 3) BlockRewards
+			slotGroup.Go(func() error {
+				blockRewardsStart := time.Now()
+				blockRewards, err := client.BlockRewards(i)
+				slog.Debug("Fetched BlockRewards", "slot", i, "duration", time.Since(blockRewardsStart))
+				if err != nil {
 					return err
 				}
-			}
 
-			rewardsMux.Lock()
-			if syncRewards != nil {
-				for _, sr := range syncRewards.Data {
-					if rewards[sr.ValidatorIndex] == nil {
-						rewards[sr.ValidatorIndex] = &types.ValidatorEpochIncome{}
-					}
-
-					if sr.Reward > 0 {
-						rewards[sr.ValidatorIndex].SyncCommitteeReward += uint64(sr.Reward)
-					} else {
-						rewards[sr.ValidatorIndex].SyncCommitteePenalty += uint64(sr.Reward * -1)
-					}
+				rewardsMux.Lock()
+				if rewards[blockRewards.Data.ProposerIndex] == nil {
+					rewards[blockRewards.Data.ProposerIndex] = &types.ValidatorEpochIncome{}
 				}
-			}
-			rewardsMux.Unlock()
-
-			rewardsMux.Lock()
-			blockRewards, err := client.BlockRewards(i)
-			if err != nil {
+				rewards[blockRewards.Data.ProposerIndex].ProposerAttestationInclusionReward += blockRewards.Data.Attestations
+				rewards[blockRewards.Data.ProposerIndex].ProposerSlashingInclusionReward += blockRewards.Data.AttesterSlashings + blockRewards.Data.ProposerSlashings
+				rewards[blockRewards.Data.ProposerIndex].ProposerSyncInclusionReward += blockRewards.Data.SyncAggregate
 				rewardsMux.Unlock()
-				return err
-			}
+				return nil
+			})
 
-			if rewards[blockRewards.Data.ProposerIndex] == nil {
-				rewards[blockRewards.Data.ProposerIndex] = &types.ValidatorEpochIncome{}
-			}
-			rewards[blockRewards.Data.ProposerIndex].ProposerAttestationInclusionReward += blockRewards.Data.Attestations
-			rewards[blockRewards.Data.ProposerIndex].ProposerSlashingInclusionReward += blockRewards.Data.AttesterSlashings + blockRewards.Data.ProposerSlashings
-			rewards[blockRewards.Data.ProposerIndex].ProposerSyncInclusionReward += blockRewards.Data.SyncAggregate
-			rewardsMux.Unlock()
-			return nil
+			// Wait for all per-slot calls
+			return slotGroup.Wait()
 		})
 	}
 
 	g.Go(func() error {
+		attestationRewardsStart := time.Now()
 		ar, err := client.AttestationRewards(epoch)
+		slog.Debug("Fetched AttestationRewards", "epoch", epoch, "duration", time.Since(attestationRewardsStart))
 		if err != nil {
 			return err
 		}
