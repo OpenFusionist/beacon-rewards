@@ -2,6 +2,7 @@ package main
 
 import (
 	"endurance-rewards/internal/config"
+	"endurance-rewards/internal/dora"
 	"endurance-rewards/internal/rewards"
 	"endurance-rewards/internal/server"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"log/slog"
 
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 func setupLoggerFromEnv() {
@@ -57,8 +59,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	var doraDB *dora.DB
+	if db, err := dora.New(cfg); err != nil {
+		slog.Error("Failed to connect to Dora Postgres", "error", err)
+	} else {
+		doraDB = db
+	}
+
 	// Create and start HTTP server
-	httpServer := server.NewServer(cfg, rewardsService)
+	httpServer := server.NewServer(cfg, rewardsService, doraDB)
 	if err := httpServer.Start(); err != nil {
 		slog.Error("Failed to start HTTP server", "error", err)
 		os.Exit(1)
@@ -77,6 +86,9 @@ func main() {
 	}
 
 	rewardsService.Stop()
+	if doraDB != nil {
+		doraDB.Close()
+	}
 
 	slog.Info("Shutdown complete")
 }
@@ -91,6 +103,10 @@ func loadConfig() *config.Config {
 	}
 	if port := os.Getenv("SERVER_PORT"); port != "" {
 		cfg.ServerPort = port
+	}
+	// Dora PG single URL
+	if v := os.Getenv("DORA_PG_URL"); v != "" {
+		cfg.DoraPGURL = v
 	}
 	if beaconURL := os.Getenv("BEACON_NODE_URL"); beaconURL != "" {
 		cfg.BeaconNodeURL = beaconURL
@@ -127,7 +143,7 @@ func loadConfig() *config.Config {
 	}
 
 	// Log configuration
-	slog.Info("Configuration loaded", "server_address", cfg.ServerAddress, "server_port", cfg.ServerPort, "beacon_node", cfg.BeaconNodeURL, "execution_node", cfg.ExecutionNodeURL, "cache_reset_interval", cfg.CacheResetInterval, "epoch_update_interval", cfg.EpochUpdateInterval, "backfill_concurrency", cfg.BackfillConcurrency, "start_epoch", cfg.StartEpoch)
+	slog.Info("Configuration loaded", "server_address", cfg.ServerAddress, "server_port", cfg.ServerPort, "dora_pg_url", cfg.DoraPGURL, "beacon_node", cfg.BeaconNodeURL, "execution_node", cfg.ExecutionNodeURL, "cache_reset_interval", cfg.CacheResetInterval, "epoch_update_interval", cfg.EpochUpdateInterval, "backfill_concurrency", cfg.BackfillConcurrency, "start_epoch", cfg.StartEpoch)
 
 	return cfg
 }

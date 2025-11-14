@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"endurance-rewards/internal/config"
+	"endurance-rewards/internal/dora"
 	"endurance-rewards/internal/rewards"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"log/slog"
@@ -17,12 +19,13 @@ import (
 type Server struct {
 	config         *config.Config
 	rewardsService *rewards.Service
+	doraDB         *dora.DB
 	router         *gin.Engine
 	httpServer     *http.Server
 }
 
 // NewServer creates a new HTTP server
-func NewServer(cfg *config.Config, rewardsService *rewards.Service) *Server {
+func NewServer(cfg *config.Config, rewardsService *rewards.Service, doraDB *dora.DB) *Server {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -31,6 +34,7 @@ func NewServer(cfg *config.Config, rewardsService *rewards.Service) *Server {
 	s := &Server{
 		config:         cfg,
 		rewardsService: rewardsService,
+		doraDB:         doraDB,
 		router:         router,
 	}
 
@@ -46,6 +50,9 @@ func (s *Server) setupRoutes() {
 
 	// Rewards endpoint
 	s.router.POST("/rewards", s.rewardsHandler)
+
+	// Deposits → top withdrawals (aggregated by normalized 0x01/0x02 address)
+	s.router.GET("/deposits/top-withdrawals", s.topWithdrawalsHandler)
 }
 
 // Start starts the HTTP server
@@ -86,6 +93,37 @@ func (s *Server) healthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "healthy",
 		"time":   time.Now().Unix(),
+	})
+}
+
+// topWithdrawalsHandler aggregates deposit amounts by withdrawal address and returns top N.
+func (s *Server) topWithdrawalsHandler(c *gin.Context) {
+	if s.doraDB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Dora Postgres is not configured/connected",
+		})
+		return
+	}
+
+	limit := 100
+	if l := c.Query("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	stats, err := s.doraDB.TopWithdrawalAddresses(ctx, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"limit":   limit,
+		"results": stats,
 	})
 }
 

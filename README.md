@@ -55,6 +55,7 @@ The service can be configured using environment variables:
 | `SERVER_PORT` | HTTP server port | `8080` |
 | `BEACON_NODE_URL` | Beacon chain node URL | `http://localhost:5052` |
 | `EXECUTION_NODE_URL` | Execution layer node URL | `http://localhost:8545` |
+| `DORA_PG_URL` | Dora Postgres URL (DSN) | `postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable` |
 
 ## Building
 
@@ -113,6 +114,33 @@ Query validator rewards (returns the sum of EL+CL rewards for each validator):
 
 ```bash
 POST /rewards
+```
+
+### Top Withdrawal Addresses (from deposits)
+
+Aggregates `deposits.amount` by normalized withdrawal address (0x01/0x02 credentials share the same 20-byte EL address) and returns the top results.
+
+```bash
+GET /deposits/top-withdrawals?limit=100
+```
+
+Parameters:
+- `limit` (optional, default 100): number of addresses to return
+
+Connection string example:
+```bash
+export DORA_PG_URL="postgres://user:pass@host:5432/dbname?sslmode=disable"
+```
+
+Response:
+```json
+{
+  "limit": 100,
+  "results": [
+    {"address": "0xabc123...", "total_amount": 123456789},
+    {"address": "0xdef456...", "total_amount": 987654321}
+  ]
+}
 ```
 
 **Request Body:**

@@ -10,6 +10,8 @@ type Config struct {
 	ServerAddress string
 	ServerPort    string
 
+	DoraPGURL string
+
 	// Ethereum configuration
 	BeaconNodeURL    string
 	ExecutionNodeURL string
@@ -30,6 +32,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		ServerAddress:       "0.0.0.0",
 		ServerPort:          "8080",
+		DoraPGURL:           "postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable",
 		BeaconNodeURL:       "http://localhost:5052",
 		ExecutionNodeURL:    "http://localhost:8545",
 		CacheResetInterval:  24 * time.Hour,
