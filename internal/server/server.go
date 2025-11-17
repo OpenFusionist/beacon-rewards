@@ -53,6 +53,10 @@ func (s *Server) setupRoutes() {
 
 	// Deposits → top withdrawals (aggregated by normalized 0x01/0x02 address)
 	s.router.GET("/deposits/top-withdrawals", s.topWithdrawalsHandler)
+
+	// get top deposits by address to deposit contracts
+	s.router.GET("/deposits/top-deposits", s.topDepositsHandler)
+
 }
 
 // Start starts the HTTP server
@@ -93,6 +97,37 @@ func (s *Server) healthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "healthy",
 		"time":   time.Now().Unix(),
+	})
+}
+
+// topDepositsHandler aggregates deposit amounts by depositor (tx sender) and returns top N.
+func (s *Server) topDepositsHandler(c *gin.Context) {
+	if s.doraDB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Dora Postgres is not configured/connected",
+		})
+		return
+	}
+
+	limit := 100
+	if l := c.Query("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	stats, err := s.doraDB.TopDepositorAddresses(ctx, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"limit":   limit,
+		"results": stats,
 	})
 }
 

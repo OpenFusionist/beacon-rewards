@@ -92,3 +92,53 @@ LIMIT $1`
 	}
 	return results, nil
 }
+
+// DepositorStat represents aggregated deposits for the depositor (tx sender) address.
+type DepositorStat struct {
+	DepositorAddress string `json:"depositor_address"`
+	TotalDeposit     int64  `json:"total_deposit"`
+	ValidatorsTotal  int64  `json:"validators_total"`
+	Slashed          int64  `json:"slashed"`
+	VoluntaryExited  int64  `json:"voluntary_exited"`
+	Active           int64  `json:"active"`
+}
+
+// TopDepositorAddresses aggregates deposits by transaction sender and returns top N by validator count.
+func (d *DB) TopDepositorAddresses(ctx context.Context, limit int) ([]DepositorStat, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	const q = `
+SELECT
+  '0x' || encode(dt.tx_sender,'hex') as depositor_address,
+  SUM(dt.amount)::bigint AS total_deposit,
+  COUNT(DISTINCT v.validator_index) AS validators_total,
+  COUNT(DISTINCT v.validator_index) FILTER (WHERE v.slashed) AS slashed,
+  COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance = 0) AS voluntary_exited,
+  COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance > 0) AS active
+FROM deposit_txs dt 
+LEFT JOIN validators v ON dt.publickey = v.pubkey 
+GROUP BY depositor_address
+ORDER BY validators_total desc
+LIMIT $1`
+
+	rows, err := d.db.QueryContext(ctx, q, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]DepositorStat, 0, limit)
+	for rows.Next() {
+		var s DepositorStat
+		if err := rows.Scan(&s.DepositorAddress, &s.TotalDeposit, &s.ValidatorsTotal, &s.Slashed, &s.VoluntaryExited, &s.Active); err != nil {
+			return nil, err
+		}
+		results = append(results, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
