@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "endurance-rewards/docs"
 	"endurance-rewards/internal/config"
 	"endurance-rewards/internal/dora"
 	"endurance-rewards/internal/rewards"

@@ -1,0 +1,117 @@
+definitions:
+  server.RewardsRequest:
+    properties:
+      validators:
+        items:
+          type: integer
+        type: array
+    required:
+    - validators
+    type: object
+info:
+  contact: {}
+paths:
+  /deposits/top-deposits:
+    get:
+      parameters:
+      - default: 100
+        description: Number of results to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Top depositors by deposited amount
+      tags:
+      - Deposits
+  /deposits/top-withdrawals:
+    get:
+      parameters:
+      - default: 100
+        description: Number of results to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Top withdrawals by aggregated deposit amount
+      tags:
+      - Deposits
+  /health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Health check
+      tags:
+      - Health
+  /rewards:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Validators request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/server.RewardsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get total rewards (EL+CL) for validators
+      tags:
+      - Rewards
+swagger: "2.0"

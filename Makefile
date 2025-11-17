@@ -4,6 +4,7 @@ include .env
 
 # Build the application
 build:
+	swag init -g cmd/rewards/main.go -o docs
 	go build -o bin/rewards ./cmd/rewards
 
 # Run the application
