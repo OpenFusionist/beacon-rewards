@@ -61,14 +61,14 @@ func (d *DB) TopWithdrawalAddresses(ctx context.Context, limit int) ([]Withdrawa
 
 	const q = `
 SELECT
-  '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') AS address,
+  '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') AS withdrawal_address,
+  SUM(d.amount)::bigint AS total_deposits,
   COUNT(DISTINCT v.validator_index) AS validators_total,
   COUNT(DISTINCT v.validator_index) FILTER (WHERE v.slashed) AS slashed,
   COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance = 0) AS voluntary_exited,
   COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance > 0) AS active
-FROM validators v
-WHERE get_byte(v.withdrawal_credentials, 0) IN (1, 2)
-GROUP BY address
+FROM validators v  left join deposits d on v.pubkey  = d.publickey 
+GROUP BY withdrawal_address
 ORDER BY validators_total DESC
 LIMIT $1`
 
