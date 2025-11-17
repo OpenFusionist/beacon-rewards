@@ -12,7 +12,17 @@ import (
 	"log/slog"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
+
+// @title           Endurance Rewards API
+// @version         1.0
+// @description     REST API for Ethereum validator rewards and deposits analytics.
+// @BasePath        /
+// @schemes         http https
+// @produce         json
+// @consumes        json
 
 // Server represents the HTTP server
 type Server struct {
@@ -50,11 +60,16 @@ func (s *Server) setupRoutes() {
 	// Rewards endpoint
 	s.router.POST("/rewards", s.rewardsHandler)
 
-	// Deposits → top withdrawals (aggregated by normalized 0x01/0x02 address)
+	// get top deposits by witrdraw address
 	s.router.GET("/deposits/top-withdrawals", s.topWithdrawalsHandler)
 
 	// get top deposits by address to deposit contracts
 	s.router.GET("/deposits/top-deposits", s.topDepositsHandler)
+
+	// Swagger UI (requires generated docs; run `swag init` and import docs package in main)
+	//http://localhost:8080/swagger/index.html
+
+	s.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
 // Start starts the HTTP server
@@ -89,6 +104,11 @@ func (s *Server) Stop() error {
 }
 
 // healthHandler handles health check requests
+// @Summary      Health check
+// @Tags         Health
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Router       /health [get]
 func (s *Server) healthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "healthy",
@@ -96,7 +116,15 @@ func (s *Server) healthHandler(c *gin.Context) {
 	})
 }
 
-// topDepositsHandler aggregates deposit amounts by depositor (tx sender) and returns top N.
+// topDepositsHandler aggregates deposit amounts && validator counts by depositor (tx sender) and returns top N by validator counts.
+// @Summary      aggregates deposit amounts && validator counts by depositor (tx sender) and returns top N by validator counts.
+// @Tags         Deposits
+// @Produce      json
+// @Param        limit   query     int  false  "Number of results to return"  default(100)
+// @Success      200     {object}  map[string]interface{}
+// @Failure      503     {object}  map[string]string
+// @Failure      500     {object}  map[string]string
+// @Router       /deposits/top-deposits [get]
 func (s *Server) topDepositsHandler(c *gin.Context) {
 	if !s.ensureDoraDB(c) {
 		return
@@ -107,7 +135,15 @@ func (s *Server) topDepositsHandler(c *gin.Context) {
 	})
 }
 
-// topWithdrawalsHandler aggregates deposit amounts by withdrawal address and returns top N.
+// topWithdrawalsHandler aggregates deposit amounts && validator counts by withdrawal address and returns top N by validator counts.
+// @Summary      aggregates deposit amounts && validator counts by withdrawal address and returns top N by validator counts.
+// @Tags         Deposits
+// @Produce      json
+// @Param        limit   query     int  false  "Number of results to return"  default(100)
+// @Success      200     {object}  map[string]interface{}
+// @Failure      503     {object}  map[string]string
+// @Failure      500     {object}  map[string]string
+// @Router       /deposits/top-withdrawals [get]
 func (s *Server) topWithdrawalsHandler(c *gin.Context) {
 	if !s.ensureDoraDB(c) {
 		return
@@ -124,6 +160,14 @@ type RewardsRequest struct {
 }
 
 // rewardsHandler handles reward queries
+// @Summary      Get total rewards (EL+CL) for validators from Today's rewards from UTC 0:00 to the present.
+// @Tags         Rewards
+// @Accept       json
+// @Produce      json
+// @Param        request  body   RewardsRequest  true  "Validators request"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  map[string]string
+// @Router       /rewards [post]
 func (s *Server) rewardsHandler(c *gin.Context) {
 	var req RewardsRequest
 

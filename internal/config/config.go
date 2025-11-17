@@ -41,7 +41,7 @@ func DefaultConfig() *Config {
 		BeaconNodeURL:       "http://localhost:5052",
 		ExecutionNodeURL:    "http://localhost:8545",
 		CacheResetInterval:  24 * time.Hour,
-		EpochUpdateInterval: 12 * time.Second, // ~1 slot on mainnet
+		EpochUpdateInterval: 384 * time.Second, // ~32 slots 
 		StartEpoch:          0,
 		BackfillConcurrency: 16,
 	}
