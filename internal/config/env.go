@@ -19,6 +19,9 @@ const (
 	envEpochUpdateInterval = "EPOCH_UPDATE_INTERVAL"
 	envStartEpoch          = "START_EPOCH"
 	envBackfillConcurrency = "BACKFILL_CONCURRENCY"
+	envEpochProcessMaxRetries  = "EPOCH_PROCESS_MAX_RETRIES"
+	envEpochProcessBaseBackoff = "EPOCH_PROCESS_BASE_BACKOFF"
+	envEpochProcessMaxBackoff  = "EPOCH_PROCESS_MAX_BACKOFF"
 )
 
 type envLookup func(string) string
@@ -135,6 +138,39 @@ var envBindings = []envBinding{
 			return fmt.Errorf("concurrency must be > 0")
 		}
 		cfg.BackfillConcurrency = concurrency
+		return nil
+	}},
+	{envEpochProcessMaxRetries, func(cfg *Config, value string) error {
+		retries, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		if retries <= 0 {
+			return fmt.Errorf("max retries must be > 0")
+		}
+		cfg.EpochProcessMaxRetries = retries
+		return nil
+	}},
+	{envEpochProcessBaseBackoff, func(cfg *Config, value string) error {
+		dur, err := time.ParseDuration(value)
+		if err != nil {
+			return err
+		}
+		if dur <= 0 {
+			return fmt.Errorf("base backoff must be > 0")
+		}
+		cfg.EpochProcessBaseBackoff = dur
+		return nil
+	}},
+	{envEpochProcessMaxBackoff, func(cfg *Config, value string) error {
+		dur, err := time.ParseDuration(value)
+		if err != nil {
+			return err
+		}
+		if dur <= 0 {
+			return fmt.Errorf("max backoff must be > 0")
+		}
+		cfg.EpochProcessMaxBackoff = dur
 		return nil
 	}},
 }
