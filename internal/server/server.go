@@ -5,7 +5,6 @@ import (
 	"endurance-rewards/internal/config"
 	"endurance-rewards/internal/dora"
 	"endurance-rewards/internal/rewards"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -56,19 +55,16 @@ func (s *Server) setupRoutes() {
 
 	// get top deposits by address to deposit contracts
 	s.router.GET("/deposits/top-deposits", s.topDepositsHandler)
-
 }
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
-	addr := fmt.Sprintf("%s:%s", s.config.ServerAddress, s.config.ServerPort)
-
 	s.httpServer = &http.Server{
-		Addr:    addr,
+		Addr:    s.config.ListenAddress(),
 		Handler: s.router,
 	}
 
-	slog.Info("Starting HTTP server", "address", addr)
+	slog.Info("Starting HTTP server", "address", s.httpServer.Addr)
 
 	go func() {
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -102,63 +98,23 @@ func (s *Server) healthHandler(c *gin.Context) {
 
 // topDepositsHandler aggregates deposit amounts by depositor (tx sender) and returns top N.
 func (s *Server) topDepositsHandler(c *gin.Context) {
-	if s.doraDB == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Dora Postgres is not configured/connected",
-		})
+	if !s.ensureDoraDB(c) {
 		return
 	}
 
-	limit := 100
-	if l := c.Query("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 {
-			limit = v
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
-	defer cancel()
-
-	stats, err := s.doraDB.TopDepositorAddresses(ctx, limit)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"limit":   limit,
-		"results": stats,
+	s.respondWithTop(c, func(ctx context.Context, limit int) (any, error) {
+		return s.doraDB.TopDepositorAddresses(ctx, limit)
 	})
 }
 
 // topWithdrawalsHandler aggregates deposit amounts by withdrawal address and returns top N.
 func (s *Server) topWithdrawalsHandler(c *gin.Context) {
-	if s.doraDB == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Dora Postgres is not configured/connected",
-		})
+	if !s.ensureDoraDB(c) {
 		return
 	}
 
-	limit := 100
-	if l := c.Query("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 {
-			limit = v
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
-	defer cancel()
-
-	stats, err := s.doraDB.TopWithdrawalAddresses(ctx, limit)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"limit":   limit,
-		"results": stats,
+	s.respondWithTop(c, func(ctx context.Context, limit int) (any, error) {
+		return s.doraDB.TopWithdrawalAddresses(ctx, limit)
 	})
 }
 
@@ -192,6 +148,55 @@ func (s *Server) rewardsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"validator_count": len(req.Validators),
 		"rewards":         validatorRewards,
+	})
+}
+
+func (s *Server) ensureDoraDB(c *gin.Context) bool {
+	if s.doraDB != nil {
+		return true
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"error": "Dora Postgres is not configured/connected",
+	})
+	return false
+}
+
+func (s *Server) limitParam(c *gin.Context) int {
+	limit := s.config.DefaultAPILimit
+	if limit <= 0 {
+		limit = 100
+	}
+
+	if raw := c.Query("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	return limit
+}
+
+func (s *Server) requestContext(c *gin.Context) (context.Context, context.CancelFunc) {
+	timeout := s.config.RequestTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	return context.WithTimeout(c.Request.Context(), timeout)
+}
+
+func (s *Server) respondWithTop(c *gin.Context, fetch func(context.Context, int) (any, error)) {
+	limit := s.limitParam(c)
+	ctx, cancel := s.requestContext(c)
+	defer cancel()
+
+	results, err := fetch(ctx, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"limit":   limit,
+		"results": results,
 	})
 }
 

@@ -7,6 +7,8 @@ import (
 	"fmt"
 )
 
+const defaultStatsLimit = 100
+
 // DB wraps a sql.DB for the Dora Postgres database.
 type DB struct {
 	db *sql.DB
@@ -56,10 +58,6 @@ type WithdrawalStat struct {
 // in the last 20 bytes of the 32-byte credentials. We group by those last 20 bytes regardless of prefix
 // to treat 0x01 and 0x02 as the same address.
 func (d *DB) TopWithdrawalAddresses(ctx context.Context, limit int) ([]WithdrawalStat, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-
 	const q = `
 SELECT
   '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') AS withdrawal_address,
@@ -73,24 +71,16 @@ GROUP BY withdrawal_address
 ORDER BY validators_total DESC
 LIMIT $1`
 
-	rows, err := d.db.QueryContext(ctx, q, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	results := make([]WithdrawalStat, 0, limit)
-	for rows.Next() {
-		var s WithdrawalStat
-		if err := rows.Scan(&s.WithdrawalAddress, &s.TotalAmount, &s.ValidatorsTotal, &s.Slashed, &s.VoluntaryExited, &s.Active); err != nil {
-			return nil, err
-		}
-		results = append(results, s)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return queryStats(ctx, d.db, limit, q, func(rows *sql.Rows, stat *WithdrawalStat) error {
+		return rows.Scan(
+			&stat.WithdrawalAddress,
+			&stat.TotalAmount,
+			&stat.ValidatorsTotal,
+			&stat.Slashed,
+			&stat.VoluntaryExited,
+			&stat.Active,
+		)
+	})
 }
 
 // DepositorStat represents aggregated deposits for the depositor (tx sender) address.
@@ -105,10 +95,6 @@ type DepositorStat struct {
 
 // TopDepositorAddresses aggregates deposits by transaction sender and returns top N by validator count.
 func (d *DB) TopDepositorAddresses(ctx context.Context, limit int) ([]DepositorStat, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-
 	const q = `
 SELECT
   '0x' || encode(dt.tx_sender,'hex') as depositor_address,
@@ -123,22 +109,41 @@ GROUP BY depositor_address
 ORDER BY validators_total desc
 LIMIT $1`
 
-	rows, err := d.db.QueryContext(ctx, q, limit)
+	return queryStats(ctx, d.db, limit, q, func(rows *sql.Rows, stat *DepositorStat) error {
+		return rows.Scan(
+			&stat.DepositorAddress,
+			&stat.TotalDeposit,
+			&stat.ValidatorsTotal,
+			&stat.Slashed,
+			&stat.VoluntaryExited,
+			&stat.Active,
+		)
+	})
+}
+
+func queryStats[T any](ctx context.Context, db *sql.DB, limit int, query string, scan func(*sql.Rows, *T) error) ([]T, error) {
+	if limit <= 0 {
+		limit = defaultStatsLimit
+	}
+
+	rows, err := db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	results := make([]DepositorStat, 0, limit)
+	results := make([]T, 0, limit)
 	for rows.Next() {
-		var s DepositorStat
-		if err := rows.Scan(&s.DepositorAddress, &s.TotalDeposit, &s.ValidatorsTotal, &s.Slashed, &s.VoluntaryExited, &s.Active); err != nil {
+		var item T
+		if err := scan(rows, &item); err != nil {
 			return nil, err
 		}
-		results = append(results, s)
+		results = append(results, item)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
 	return results, nil
 }

@@ -24,6 +24,8 @@ const (
 	GENESIS_TIMESTAMP = 1709532000
 )
 
+var gweiScalar = big.NewInt(1_000_000_000)
+
 // Service manages validator reward statistics
 type Service struct {
 	config   *config.Config
@@ -58,23 +60,8 @@ func (s *Service) Start() error {
 	// Trigger backfill to current UTC 00:00 epoch (non-blocking)
 	go s.backfillToUTCMidnight()
 
-	// Determine starting epoch for live processing, avoiding overlap with backfill
-	now := time.Now().UTC()
-	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	midnightEpoch := s.getCurrentEpoch(midnight)
-
-	var startFrom uint64
-	switch {
-	case s.config.StartEpoch == 0:
-		// Start from the current epoch
-		startFrom = s.getCurrentEpoch(time.Now())
-	case s.config.StartEpoch <= midnightEpoch:
-		// If backfilling [StartEpoch..midnightEpoch], start live processing from midnightEpoch+1
-		startFrom = midnightEpoch + 1
-	default:
-		// If backfilling (midnightEpoch+1..StartEpoch), start from StartEpoch+1
-		startFrom = s.config.StartEpoch + 1
-	}
+	midnightEpoch := s.currentMidnightEpoch()
+	startFrom := s.determineLiveStartEpoch(midnightEpoch)
 
 	// Start the epoch processor
 	go s.epochProcessor(startFrom)
@@ -110,37 +97,19 @@ func (s *Service) epochProcessor(startFrom uint64) {
 	}
 }
 
-// backfillToUTCMidnight backfills epochs from StartEpoch up to current UTC 00:00 epoch using a worker pool
+// backfillToUTCMidnight backfills epochs using a worker pool.
+// Default behavior (StartEpoch == 0): backfill from today's UTC midnight epoch up to the current latest epoch.
+// If StartEpoch is set, existing custom range logic applies.
 func (s *Service) backfillToUTCMidnight() {
 	startTime := time.Now()
-	now := time.Now().UTC()
-	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	midnightEpoch := s.getCurrentEpoch(midnight)
-
-	start := s.config.StartEpoch
-	if start == 0 {
-		slog.Info("Backfill skipped", "start_epoch", start, "midnight_epoch", midnightEpoch)
+	midnightEpoch := s.currentMidnightEpoch()
+	from, to, ok := s.backfillRange(midnightEpoch)
+	if !ok {
+		slog.Info("Backfill skipped", "start_epoch", s.config.StartEpoch, "midnight_epoch", midnightEpoch)
 		return
 	}
 
-	var from, to uint64
-	if start <= midnightEpoch {
-		from = start
-		to = midnightEpoch
-	} else {
-		// typical usage: start_epoch > midnight_epoch → backfill (midnight_epoch+1 .. start_epoch)
-		from = midnightEpoch + 1
-		to = start
-	}
-	if from > to {
-		slog.Info("Backfill skipped (empty range)", "from_epoch", from, "to_epoch", to)
-		return
-	}
-
-	workerCount := s.config.BackfillConcurrency
-	if workerCount <= 0 {
-		workerCount = 1
-	}
+	workerCount := s.workerCount()
 
 	total := to - from + 1
 	slog.Info("Starting backfill", "from_epoch", from, "to_epoch", to, "count", total, "concurrency", workerCount)
@@ -218,27 +187,13 @@ func (s *Service) processEpoch(epoch uint64) {
 // accumulateRewards adds the new rewards to existing cached rewards
 // Note: This method assumes the caller holds the cacheMux lock
 func (s *Service) accumulateRewards(validatorIndex uint64, income *types.ValidatorEpochIncome) {
+	if income == nil {
+		return
+	}
+
 	existing, exists := s.cache[validatorIndex]
 	if !exists {
-		// First time seeing this validator, create a copy to store
-		newIncome := &types.ValidatorEpochIncome{
-			AttestationSourceReward:            income.AttestationSourceReward,
-			AttestationSourcePenalty:           income.AttestationSourcePenalty,
-			AttestationTargetReward:            income.AttestationTargetReward,
-			AttestationTargetPenalty:           income.AttestationTargetPenalty,
-			AttestationHeadReward:              income.AttestationHeadReward,
-			FinalityDelayPenalty:               income.FinalityDelayPenalty,
-			ProposerSlashingInclusionReward:    income.ProposerSlashingInclusionReward,
-			ProposerAttestationInclusionReward: income.ProposerAttestationInclusionReward,
-			ProposerSyncInclusionReward:        income.ProposerSyncInclusionReward,
-			SyncCommitteeReward:                income.SyncCommitteeReward,
-			SyncCommitteePenalty:               income.SyncCommitteePenalty,
-			SlashingReward:                     income.SlashingReward,
-			SlashingPenalty:                    income.SlashingPenalty,
-			TxFeeRewardWei:                     income.TxFeeRewardWei,
-			ProposalsMissed:                    income.ProposalsMissed,
-		}
-		s.cache[validatorIndex] = newIncome
+		s.cache[validatorIndex] = income
 		return
 	}
 
@@ -258,13 +213,7 @@ func (s *Service) accumulateRewards(validatorIndex uint64, income *types.Validat
 	existing.SlashingPenalty += income.SlashingPenalty
 	existing.ProposalsMissed += income.ProposalsMissed
 
-	// Accumulate TxFeeRewardWei (EL rewards)
-	if len(income.TxFeeRewardWei) > 0 {
-		existingWei := new(big.Int).SetBytes(existing.TxFeeRewardWei)
-		incomeWei := new(big.Int).SetBytes(income.TxFeeRewardWei)
-		totalWei := new(big.Int).Add(existingWei, incomeWei)
-		existing.TxFeeRewardWei = totalWei.Bytes()
-	}
+	existing.TxFeeRewardWei = addWei(existing.TxFeeRewardWei, income.TxFeeRewardWei)
 }
 
 // cacheResetTimer periodically clears the cache
@@ -277,12 +226,8 @@ func (s *Service) cacheResetTimer() {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
-			s.cacheMux.Lock()
-			oldSize := len(s.cache)
-			s.cache = make(map[uint64]*types.ValidatorEpochIncome)
-			s.cacheMux.Unlock()
-
-			slog.Info("Cache reset completed", "cleared", oldSize)
+			cleared := s.resetCache()
+			slog.Info("Cache reset completed", "cleared", cleared)
 		}
 	}
 }
@@ -329,37 +274,85 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64) map[uint64]*Validat
 	s.cacheMux.RLock()
 	defer s.cacheMux.RUnlock()
 
-	result := make(map[uint64]*ValidatorReward)
-	gweiToWei := big.NewInt(1000000000) // 1 gwei = 10^9 wei
-	gweiDivisor := big.NewInt(1000000000)
+	result := make(map[uint64]*ValidatorReward, len(validatorIndices))
 
 	for _, index := range validatorIndices {
-		if income, exists := s.cache[index]; exists {
-			reward := &ValidatorReward{
-				ValidatorIndex: index,
-			}
-
-			// Calculate CL rewards (in gwei)
-			clRewardsGwei := income.TotalClRewards()
-			reward.ClRewardsGwei = clRewardsGwei
-
-			// Get EL rewards (in wei)
-			elRewardsWei := big.NewInt(0)
-			if len(income.TxFeeRewardWei) > 0 {
-				elRewardsWei.SetBytes(income.TxFeeRewardWei)
-			}
-			reward.ElRewardsGwei = new(big.Int).Div(elRewardsWei, gweiDivisor).Int64()
-
-			// Calculate total rewards (CL + EL) in wei
-			clRewardsWei := new(big.Int).Mul(big.NewInt(clRewardsGwei), gweiToWei)
-			totalRewardsWei := new(big.Int).Add(clRewardsWei, elRewardsWei)
-			reward.TotalRewardsGwei = new(big.Int).Div(totalRewardsWei, gweiDivisor).Int64()
-
-			result[index] = reward
+		income, exists := s.cache[index]
+		if !exists {
+			continue
 		}
+
+		reward := &ValidatorReward{ValidatorIndex: index}
+		reward.ClRewardsGwei = income.TotalClRewards()
+
+		elRewardsWei := weiBytesToBigInt(income.TxFeeRewardWei)
+		reward.ElRewardsGwei = new(big.Int).Div(new(big.Int).Set(elRewardsWei), gweiScalar).Int64()
+
+		clRewardsWei := new(big.Int).Mul(big.NewInt(reward.ClRewardsGwei), gweiScalar)
+		totalRewardsWei := new(big.Int).Add(clRewardsWei, elRewardsWei)
+		reward.TotalRewardsGwei = new(big.Int).Div(totalRewardsWei, gweiScalar).Int64()
+
+		result[index] = reward
 	}
 
 	return result
+}
+
+func (s *Service) currentMidnightEpoch() uint64 {
+	now := time.Now().UTC()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	return s.getCurrentEpoch(midnight)
+}
+
+func (s *Service) determineLiveStartEpoch(midnightEpoch uint64) uint64 {
+	switch {
+	case s.config.StartEpoch == 0:
+		// Start live processing from the next epoch after the latest already backfilled
+		return s.getCurrentEpoch(time.Now()) + 1
+	case s.config.StartEpoch <= midnightEpoch:
+		return midnightEpoch + 1
+	default:
+		return s.config.StartEpoch + 1
+	}
+}
+
+func (s *Service) backfillRange(midnightEpoch uint64) (uint64, uint64, bool) {
+	start := s.config.StartEpoch
+	if start == 0 {
+		// Default: backfill from midnight to the current latest epoch
+		latest := s.getCurrentEpoch(time.Now())
+		if midnightEpoch > latest {
+			return 0, 0, false
+		}
+		return midnightEpoch, latest, true
+	}
+
+	if start <= midnightEpoch {
+		return start, midnightEpoch, start <= midnightEpoch
+	}
+
+	from := midnightEpoch + 1
+	if from > start {
+		return 0, 0, false
+	}
+
+	return from, start, true
+}
+
+func (s *Service) workerCount() int {
+	if s.config.BackfillConcurrency <= 0 {
+		return 1
+	}
+	return s.config.BackfillConcurrency
+}
+
+func (s *Service) resetCache() int {
+	s.cacheMux.Lock()
+	defer s.cacheMux.Unlock()
+
+	size := len(s.cache)
+	s.cache = make(map[uint64]*types.ValidatorEpochIncome)
+	return size
 }
 
 // getCurrentEpoch fetches the current epoch from the beacon chain
@@ -369,6 +362,24 @@ func (s *Service) getCurrentEpoch(ts time.Time) uint64 {
 	}
 	return uint64((ts.Unix() - int64(GENESIS_TIMESTAMP)) / int64(SECONDS_PER_SLOT) / int64(SLOTS_PER_EPOCH))
 
+}
+
+func addWei(base, delta []byte) []byte {
+	if len(delta) == 0 {
+		return base
+	}
+
+	baseInt := new(big.Int).SetBytes(base)
+	deltaInt := new(big.Int).SetBytes(delta)
+	baseInt.Add(baseInt, deltaInt)
+	return baseInt.Bytes()
+}
+
+func weiBytesToBigInt(data []byte) *big.Int {
+	if len(data) == 0 {
+		return big.NewInt(0)
+	}
+	return new(big.Int).SetBytes(data)
 }
 
 // GetRewardsForEpoch fetches rewards for a specific epoch from the beacon chain and execution layer

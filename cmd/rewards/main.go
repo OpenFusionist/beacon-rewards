@@ -7,9 +7,7 @@ import (
 	"endurance-rewards/internal/server"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
-	"time"
 
 	"log/slog"
 
@@ -51,7 +49,12 @@ func main() {
 	slog.Info("Starting Endurance Rewards Service")
 
 	// Load configuration
-	cfg := loadConfig()
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("Failed to load configuration", "error", err)
+		os.Exit(1)
+	}
+	logConfig(cfg)
 	// Create rewards service
 	rewardsService := rewards.NewService(cfg)
 	if err := rewardsService.Start(); err != nil {
@@ -93,57 +96,18 @@ func main() {
 	slog.Info("Shutdown complete")
 }
 
-// loadConfig loads the application configuration
-func loadConfig() *config.Config {
-	cfg := config.DefaultConfig()
-
-	// Override with environment variables if present
-	if addr := os.Getenv("SERVER_ADDRESS"); addr != "" {
-		cfg.ServerAddress = addr
-	}
-	if port := os.Getenv("SERVER_PORT"); port != "" {
-		cfg.ServerPort = port
-	}
-	// Dora PG single URL
-	if v := os.Getenv("DORA_PG_URL"); v != "" {
-		cfg.DoraPGURL = v
-	}
-	if beaconURL := os.Getenv("BEACON_NODE_URL"); beaconURL != "" {
-		cfg.BeaconNodeURL = beaconURL
-	}
-	if execURL := os.Getenv("EXECUTION_NODE_URL"); execURL != "" {
-		cfg.ExecutionNodeURL = execURL
-	}
-	if startEpoch := os.Getenv("START_EPOCH"); startEpoch != "" {
-		startEpochInt, err := strconv.Atoi(startEpoch)
-		if err != nil {
-			slog.Error("Invalid START_EPOCH value", "error", err)
-			os.Exit(1)
-		}
-		cfg.StartEpoch = uint64(startEpochInt)
-	}
-	if bfConc := os.Getenv("BACKFILL_CONCURRENCY"); bfConc != "" {
-		bfConcInt, err := strconv.Atoi(bfConc)
-		if err != nil {
-			slog.Error("Invalid BACKFILL_CONCURRENCY value", "error", err)
-			os.Exit(1)
-		}
-		if bfConcInt <= 0 {
-			bfConcInt = 1
-		}
-		cfg.BackfillConcurrency = bfConcInt
-	}
-	if epochInterval := os.Getenv("EPOCH_UPDATE_INTERVAL"); epochInterval != "" {
-		dur, err := time.ParseDuration(epochInterval)
-		if err != nil {
-			slog.Error("Invalid EPOCH_UPDATE_INTERVAL value", "error", err)
-			os.Exit(1)
-		}
-		cfg.EpochUpdateInterval = dur
-	}
-
-	// Log configuration
-	slog.Info("Configuration loaded", "server_address", cfg.ServerAddress, "server_port", cfg.ServerPort, "dora_pg_url", cfg.DoraPGURL, "beacon_node", cfg.BeaconNodeURL, "execution_node", cfg.ExecutionNodeURL, "cache_reset_interval", cfg.CacheResetInterval, "epoch_update_interval", cfg.EpochUpdateInterval, "backfill_concurrency", cfg.BackfillConcurrency, "start_epoch", cfg.StartEpoch)
-
-	return cfg
+func logConfig(cfg *config.Config) {
+	slog.Info(
+		"Configuration loaded",
+		"listen_address", cfg.ListenAddress(),
+		"dora_pg_url", cfg.DoraPGURL,
+		"beacon_node", cfg.BeaconNodeURL,
+		"execution_node", cfg.ExecutionNodeURL,
+		"cache_reset_interval", cfg.CacheResetInterval,
+		"epoch_update_interval", cfg.EpochUpdateInterval,
+		"backfill_concurrency", cfg.BackfillConcurrency,
+		"start_epoch", cfg.StartEpoch,
+		"request_timeout", cfg.RequestTimeout,
+		"default_api_limit", cfg.DefaultAPILimit,
+	)
 }
