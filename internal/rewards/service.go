@@ -57,7 +57,7 @@ func NewService(cfg *config.Config) *Service {
 func (s *Service) Start() error {
 	slog.Info("Starting rewards service")
 
-	// Trigger backfill to current UTC 00:00 epoch (non-blocking)
+	// Trigger backfill to current UTC+8 00:00 epoch (non-blocking)
 	go s.backfillToUTCMidnight()
 
 	midnightEpoch := s.currentMidnightEpoch()
@@ -98,7 +98,7 @@ func (s *Service) epochProcessor(startFrom uint64) {
 }
 
 // backfillToUTCMidnight backfills epochs using a worker pool.
-// Default behavior (StartEpoch == 0): backfill from today's UTC midnight epoch up to the current latest epoch.
+// Default behavior (StartEpoch == 0): backfill from today's UTC+8 midnight epoch up to the current latest epoch.
 // If StartEpoch is set, existing custom range logic applies.
 func (s *Service) backfillToUTCMidnight() {
 	startTime := time.Now()
@@ -299,8 +299,9 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64) map[uint64]*Validat
 }
 
 func (s *Service) currentMidnightEpoch() uint64 {
-	now := time.Now().UTC()
-	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	loc := time.FixedZone("UTC+8", 8*60*60)
+	now := time.Now().In(loc)
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	return s.getCurrentEpoch(midnight)
 }
 
