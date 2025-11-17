@@ -91,15 +91,23 @@ func (s *Service) epochProcessor(startFrom uint64) {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
-			s.processEpoch(currentEpoch)
-			currentEpoch++
+			// Only process up to the latest completed epoch (N-1). If current epoch is not yet completed, wait.
+			latest := s.getCurrentEpoch(time.Now())
+			if latest == 0 || currentEpoch > (latest-1) {
+				slog.Info("No completed epoch to process yet", "current_epoch", currentEpoch, "latest_now", latest)
+				continue
+			}
+
+			// Retry processing the epoch on transient failures; only advance when successful.
+			if ok := s.processEpochWithRetry(currentEpoch); ok {
+				currentEpoch++
+			}
 		}
 	}
 }
 
 // backfillToUTCMidnight backfills epochs using a worker pool.
 // Default behavior (StartEpoch == 0): backfill from today's UTC+8 midnight epoch up to the current latest epoch.
-// If StartEpoch is set, existing custom range logic applies.
 func (s *Service) backfillToUTCMidnight() {
 	startTime := time.Now()
 	midnightEpoch := s.currentMidnightEpoch()
@@ -130,7 +138,7 @@ func (s *Service) backfillToUTCMidnight() {
 					if !ok {
 						return
 					}
-					s.processEpoch(epoch)
+					_ = s.processEpochWithRetry(epoch)
 				}
 			}
 		}()
@@ -157,7 +165,7 @@ produce:
 }
 
 // processEpoch fetches rewards for a specific epoch and updates the cache
-func (s *Service) processEpoch(epoch uint64) {
+func (s *Service) processEpoch(epoch uint64) error {
 	startTime := time.Now()
 	slog.Debug("Processing epoch", "epoch", epoch)
 
@@ -167,7 +175,7 @@ func (s *Service) processEpoch(epoch uint64) {
 	rewardsDuration := time.Since(rewardsStart)
 	if err != nil {
 		slog.Error("Failed to get rewards for epoch", "epoch", epoch, "error", err, "get_rewards_duration", rewardsDuration)
-		return
+		return err
 	}
 
 	// Update cache with rewards for all validators (using accumulation)
@@ -182,6 +190,7 @@ func (s *Service) processEpoch(epoch uint64) {
 
 	totalDuration := time.Since(startTime)
 	slog.Info("Updated cache with all validators", "epoch", epoch, "validators", len(rewards), "get_rewards_duration", rewardsDuration, "accumulate_duration", accumulateDuration, "total_duration", totalDuration)
+	return nil
 }
 
 // accumulateRewards adds the new rewards to existing cached rewards
@@ -308,8 +317,12 @@ func (s *Service) currentMidnightEpoch() uint64 {
 func (s *Service) determineLiveStartEpoch(midnightEpoch uint64) uint64 {
 	switch {
 	case s.config.StartEpoch == 0:
-		// Start live processing from the next epoch after the latest already backfilled
-		return s.getCurrentEpoch(time.Now()) + 1
+		// Start live processing from the next epoch after the latest completed epoch
+		latest := s.getCurrentEpoch(time.Now())
+		if latest == 0 {
+			return 0
+		}
+		return (latest - 1) + 1 // i.e., latest
 	case s.config.StartEpoch <= midnightEpoch:
 		return midnightEpoch + 1
 	default:
@@ -322,6 +335,11 @@ func (s *Service) backfillRange(midnightEpoch uint64) (uint64, uint64, bool) {
 	if start == 0 {
 		// Default: backfill from midnight to the current latest epoch
 		latest := s.getCurrentEpoch(time.Now())
+		// Only backfill up to the latest completed epoch (N-1)
+		if latest == 0 {
+			return 0, 0, false
+		}
+		latest = latest - 1
 		if midnightEpoch > latest {
 			return 0, 0, false
 		}
@@ -381,6 +399,46 @@ func weiBytesToBigInt(data []byte) *big.Int {
 		return big.NewInt(0)
 	}
 	return new(big.Int).SetBytes(data)
+}
+
+// processEpochWithRetry wraps processEpoch with a simple bounded backoff retry.
+func (s *Service) processEpochWithRetry(epoch uint64) bool {
+	maxRetries := s.config.EpochProcessMaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 5
+	}
+	baseBackoff := s.config.EpochProcessBaseBackoff
+	if baseBackoff <= 0 {
+		baseBackoff = 2 * time.Second
+	}
+	maxBackoff := s.config.EpochProcessMaxBackoff
+	if maxBackoff <= 0 {
+		maxBackoff = 30 * time.Second
+	}
+
+	backoff := baseBackoff
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if s.ctx.Err() != nil {
+			return false
+		}
+		err := s.processEpoch(epoch)
+		if err == nil {
+			return true
+		}
+		slog.Warn("Retrying epoch processing", "epoch", epoch, "attempt", attempt, "max_attempts", maxRetries, "backoff", backoff, "error", err)
+		select {
+		case <-s.ctx.Done():
+			return false
+		case <-time.After(backoff):
+		}
+		// Exponential backoff with cap
+		backoff = backoff * 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+	}
+	slog.Error("Exhausted retries for epoch", "epoch", epoch, "attempts", maxRetries)
+	return false
 }
 
 // GetRewardsForEpoch fetches rewards for a specific epoch from the beacon chain and execution layer
@@ -445,7 +503,6 @@ func GetRewardsForEpoch(epoch uint64, client *beacon.Client, elEndpoint string) 
 						logrus.Errorf("error retrieving execution block number for slot %v: %v", i, err)
 						return err
 					}
-					// Pre-merge: nothing to fetch from EL
 					return nil
 				}
 

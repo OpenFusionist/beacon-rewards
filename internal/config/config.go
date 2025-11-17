@@ -25,6 +25,9 @@ type Config struct {
 	// Epoch processing configuration.
 	EpochUpdateInterval time.Duration
 	StartEpoch          uint64
+	EpochProcessMaxRetries   int
+	EpochProcessBaseBackoff  time.Duration
+	EpochProcessMaxBackoff   time.Duration
 
 	// Backfill configuration.
 	BackfillConcurrency int
@@ -43,6 +46,9 @@ func DefaultConfig() *Config {
 		CacheResetInterval:  24 * time.Hour,
 		EpochUpdateInterval: 384 * time.Second, // ~32 slots 
 		StartEpoch:          0,
+		EpochProcessMaxRetries:  5,
+		EpochProcessBaseBackoff: 2 * time.Second,
+		EpochProcessMaxBackoff:  30 * time.Second,
 		BackfillConcurrency: 16,
 	}
 }
