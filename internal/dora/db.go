@@ -175,6 +175,65 @@ func queryStats[T any](ctx context.Context, db *sql.DB, limit int, query string,
 	return results, nil
 }
 
+// ValidatorsByDepositorAddresses returns the validator indices funded by the provided depositor (tx sender) addresses.
+func (d *DB) ValidatorsByDepositorAddresses(ctx context.Context, addresses []string) (map[string][]uint64, error) {
+	if d == nil || d.db == nil {
+		return map[string][]uint64{}, nil
+	}
+
+	normalized, err := NormalizeAddresses(addresses)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make(map[string][]uint64, len(normalized))
+	for _, addr := range normalized {
+		results[addr] = []uint64{}
+	}
+
+	if len(normalized) == 0 {
+		return results, nil
+	}
+
+	rows, err := d.db.QueryContext(ctx, `
+SELECT
+  '0x' || encode(dt.tx_sender,'hex') AS depositor_address,
+  array_agg(DISTINCT v.validator_index) FILTER (WHERE v.validator_index IS NOT NULL) AS validator_indices
+FROM deposit_txs dt
+LEFT JOIN validators v ON dt.publickey = v.pubkey
+WHERE '0x' || encode(dt.tx_sender,'hex') = ANY($1)
+GROUP BY depositor_address
+`, pq.Array(normalized))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var address string
+		var validatorIndices pq.Int64Array
+		if err := rows.Scan(&address, (*pq.Int64Array)(&validatorIndices)); err != nil {
+			return nil, err
+		}
+
+		validators := make([]uint64, 0, len(validatorIndices))
+		for _, idx := range validatorIndices {
+			if idx < 0 {
+				continue
+			}
+			validators = append(validators, uint64(idx))
+		}
+
+		results[strings.ToLower(address)] = validators
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
 // EffectiveBalances returns the effective_balance for the requested validator indices.
 func (d *DB) EffectiveBalances(ctx context.Context, indices []uint64) (map[uint64]int64, error) {
 	if d == nil || d.db == nil || len(indices) == 0 {

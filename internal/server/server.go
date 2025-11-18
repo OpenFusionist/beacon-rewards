@@ -5,12 +5,12 @@ import (
 	"endurance-rewards/internal/config"
 	"endurance-rewards/internal/dora"
 	"endurance-rewards/internal/rewards"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-
-	"log/slog"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -67,6 +67,7 @@ func (s *Server) setupRoutes() {
 
 	// Rewards endpoint
 	s.router.POST("/rewards", s.rewardsHandler)
+	s.router.POST("/rewards/by-address", s.addressRewardsHandler)
 
 	// get top deposits by witrdraw address
 	s.router.GET("/deposits/top-withdrawals", s.topWithdrawalsHandler)
@@ -176,6 +177,22 @@ type RewardsRequest struct {
 	Validators []uint64 `json:"validators" binding:"required"`
 }
 
+// AddressRewardsRequest represents the request body for reward aggregation per depositor address.
+type AddressRewardsRequest struct {
+	Addresses []string `json:"addresses" binding:"required"`
+}
+
+// AddressRewardsResult captures the aggregated rewards per depositor address.
+type AddressRewardsResult struct {
+	Address                   string `json:"address"`
+	DepositorLabel            string `json:"depositor_label,omitempty"`
+	ValidatorCount            int    `json:"validator_count"`
+	ClRewardsGwei             int64  `json:"cl_rewards_gwei"`
+	ElRewardsGwei             int64  `json:"el_rewards_gwei"`
+	TotalRewardsGwei          int64  `json:"total_rewards_gwei"`
+	TotalEffectiveBalanceGwei int64  `json:"total_effective_balance_gwei"`
+}
+
 // rewardsHandler handles reward queries
 // @Summary      Get total rewards (EL+CL) for validators from Today's rewards from UTC 0:00 to the present.
 // @Tags         Rewards
@@ -221,6 +238,105 @@ func (s *Server) rewardsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"validator_count": len(req.Validators),
 		"rewards":         validatorRewards,
+	})
+}
+
+// addressRewardsHandler aggregates validator rewards across depositor (tx sender) addresses.
+// @Summary      Get aggregated validator rewards (EL+CL) per depositor address.
+// @Description  Looks up validators funded by each depositor (tx sender) address and returns the summed rewards for those validators.
+// @Tags         Rewards
+// @Accept       json
+// @Produce      json
+// @Param        request  body   AddressRewardsRequest  true  "Addresses request"
+// @Success      200      {object}  map[string]interface{}
+// @Failure      400      {object}  map[string]string
+// @Failure      503      {object}  map[string]string
+// @Router       /rewards/by-address [post]
+func (s *Server) addressRewardsHandler(c *gin.Context) {
+	if !s.ensureDoraDB(c) {
+		return
+	}
+
+	var req AddressRewardsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request body: addresses array is required",
+		})
+		return
+	}
+
+	if len(req.Addresses) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Addresses array cannot be empty",
+		})
+		return
+	}
+
+	ctx, cancel := s.requestContext(c)
+	defer cancel()
+
+	addressValidators, err := s.doraDB.ValidatorsByDepositorAddresses(ctx, req.Addresses)
+	if err != nil {
+		if errors.Is(err, dora.ErrInvalidAddress) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		slog.Error("Failed to load validators by address", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load validators for addresses"})
+		return
+	}
+
+	validatorSet := make(map[uint64]struct{})
+	for _, validators := range addressValidators {
+		for _, idx := range validators {
+			validatorSet[idx] = struct{}{}
+		}
+	}
+	allValidators := make([]uint64, 0, len(validatorSet))
+	for idx := range validatorSet {
+		allValidators = append(allValidators, idx)
+	}
+
+	// load effective balances for all validators
+	effectiveBalances := map[uint64]int64{}
+	if len(allValidators) > 0 {
+		if balances, err := s.doraDB.EffectiveBalances(ctx, allValidators); err != nil {
+			slog.Error("Failed to load effective balances", "error", err)
+		} else {
+			effectiveBalances = balances
+		}
+	}
+
+	validatorRewards := s.rewardsService.GetTotalRewards(allValidators, effectiveBalances)
+
+	results := make(map[string]AddressRewardsResult, len(addressValidators))
+	for addr, validators := range addressValidators {
+		entry := AddressRewardsResult{
+			Address:        addr,
+			ValidatorCount: len(validators),
+		}
+
+		if label, ok := s.lookupDepositorLabel(addr); ok {
+			entry.DepositorLabel = label
+		}
+
+		for _, idx := range validators {
+			reward, ok := validatorRewards[idx]
+			if !ok {
+				continue
+			}
+			entry.ClRewardsGwei += reward.ClRewardsGwei
+			entry.ElRewardsGwei += reward.ElRewardsGwei
+			entry.TotalRewardsGwei += reward.TotalRewardsGwei
+			entry.TotalEffectiveBalanceGwei += reward.EffectiveBalanceGwei
+		}
+
+		results[addr] = entry
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"address_count": len(results),
+		"results":       results,
 	})
 }
 

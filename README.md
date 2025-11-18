@@ -202,6 +202,40 @@ curl -X POST http://localhost:8080/rewards \
   -d '{"validators": [100, 200, 300, 400]}'
 ```
 
+### Get Address Rewards (by depositor)
+
+Aggregate the rewards for every validator funded by the provided depositor (tx sender) addresses. This endpoint requires the Dora Postgres database to resolve validators for each address.
+
+```bash
+POST /rewards/by-address
+```
+
+**Request Body:**
+```json
+{
+  "addresses": ["0xabc123...", "0xdef456..."]
+}
+```
+
+**Response:**
+```json
+{
+  "address_count": 2,
+  "results": {
+    "0xabc123...": {
+      "address": "0xabc123...",
+      "depositor_label": "Example Staker",
+      "validator_count": 4,
+      "cl_rewards_gwei": 123456,
+      "el_rewards_gwei": 98765,
+      "total_rewards_gwei": 222221,
+      "total_effective_balance_gwei": 128000
+    }
+  }
+}
+```
+
+
 ## How It Works
 
 ### Reward Collection
