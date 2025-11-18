@@ -10,7 +10,11 @@ import (
 	"github.com/lib/pq"
 )
 
-const defaultStatsLimit = 100
+const (
+	defaultStatsLimit       = 100
+	epochShift              = uint64(1) << 63
+	epochOffset       int64 = -1 << 63
+)
 
 // DB wraps a sql.DB for the Dora Postgres database.
 type DB struct {
@@ -254,18 +258,57 @@ WHERE validator_index = ANY($1)
 	return balances, nil
 }
 
-// TotalEffectiveBalance returns the sum of effective_balance across all validators.
-func (d *DB) TotalEffectiveBalance(ctx context.Context) (int64, error) {
+// ActiveValidatorCount returns the number of validators whose activation/exit epochs indicate an active status.
+// The Dora schema stores epoch fields as int64 values shifted by -2^63 to fit unsigned epochs into signed columns.
+// We convert the requested epoch into the shifted domain so comparisons align with the stored representation.
+func (d *DB) ActiveValidatorCount(ctx context.Context, epoch uint64) (int64, error) {
 	if d == nil || d.db == nil {
 		return 0, nil
 	}
+
+	shiftedEpoch := convertUint64EpochToStorage(epoch)
+	row := d.db.QueryRowContext(ctx, `
+SELECT COUNT(*)::bigint
+FROM validators
+WHERE activation_epoch <= $1 AND exit_epoch > $1
+`, shiftedEpoch)
+	var count int64
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// TotalEffectiveBalance returns the sum of effective_balance across all validators.
+func (d *DB) TotalEffectiveBalance(ctx context.Context, epoch uint64) (int64, error) {
+	if d == nil || d.db == nil {
+		return 0, nil
+	}
+	shiftedEpoch := convertUint64EpochToStorage(epoch)
+
 	row := d.db.QueryRowContext(ctx, `
 SELECT COALESCE(SUM(effective_balance), 0)::bigint
 FROM validators
-`)
+WHERE activation_epoch <= $1 AND exit_epoch > $1
+`, shiftedEpoch)
 	var sum int64
 	if err := row.Scan(&sum); err != nil {
 		return 0, err
 	}
 	return sum, nil
+}
+
+// ConvertInt64ToUint64 reverses the -2^63 shift applied to epoch fields stored in Dora.
+// The database keeps uint64 epochs in signed BIGINT columns by subtracting 2^63.
+// Adding the shift restores the original ordering and range.
+func ConvertInt64ToUint64(i int64) uint64 {
+	return uint64(i) + epochShift
+}
+
+// convertUint64EpochToStorage translates a natural epoch into the shifted representation kept in Postgres.
+func convertUint64EpochToStorage(epoch uint64) int64 {
+	if epoch >= epochShift {
+		return int64(epoch - epochShift)
+	}
+	return int64(epoch) + epochOffset
 }

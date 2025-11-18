@@ -325,13 +325,16 @@ func (s *Service) computeNetworkSnapshotLocked(now time.Time) *NetworkRewardSnap
 	}
 	elRewardsGwei := new(big.Int).Div(elRewardsWei, gweiScalar).Int64()
 	snapshot.ValidatorCount = len(s.cache)
+	if activeCount, err := s.countActiveValidators(now); err != nil {
+		slog.Error("Failed to count active validators", "error", err)
+	} else if activeCount > 0 {
+		snapshot.ValidatorCount = int(activeCount)
+	}
 	snapshot.ClRewardsGwei = clRewardsTotal
 	snapshot.ElRewardsGwei = elRewardsGwei
 	snapshot.TotalRewardsGwei = clRewardsTotal + elRewardsGwei
 
-	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
-	totalEffective, err := s.doraDB.TotalEffectiveBalance(ctx)
-	cancel()
+	totalEffective, err := s.totalEffectiveBalance(now)
 	if err != nil {
 		slog.Error("Failed to sum effective balances from Dora", "error", err)
 	}
@@ -345,6 +348,26 @@ func (s *Service) computeNetworkSnapshotLocked(now time.Time) *NetworkRewardSnap
 	}
 
 	return snapshot
+}
+
+func (s *Service) countActiveValidators(now time.Time) (int64, error) {
+	if s.doraDB == nil {
+		return 0, nil
+	}
+	epoch := s.getCurrentEpoch(now)
+	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
+	defer cancel()
+	return s.doraDB.ActiveValidatorCount(ctx, epoch)
+}
+
+func (s *Service) totalEffectiveBalance(now time.Time) (int64, error) {
+	if s.doraDB == nil {
+		return 0, nil
+	}
+	epoch := s.getCurrentEpoch(now)
+	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
+	defer cancel()
+	return s.doraDB.TotalEffectiveBalance(ctx, epoch)
 }
 
 // ValidatorReward represents the total reward (EL + CL) for a single validator.
