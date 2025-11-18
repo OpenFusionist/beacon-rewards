@@ -110,5 +110,6 @@ func logConfig(cfg *config.Config) {
 		"start_epoch", cfg.StartEpoch,
 		"request_timeout", cfg.RequestTimeout,
 		"default_api_limit", cfg.DefaultAPILimit,
+		"depositor_labels_file", cfg.DepositorLabelsFile,
 	)
 }

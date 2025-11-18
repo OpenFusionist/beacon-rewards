@@ -8,17 +8,18 @@ import (
 )
 
 const (
-	envServerAddress       = "SERVER_ADDRESS"
-	envServerPort          = "SERVER_PORT"
-	envRequestTimeout      = "REQUEST_TIMEOUT"
-	envDefaultLimit        = "DEFAULT_API_LIMIT"
-	envDoraPostgresURL     = "DORA_PG_URL"
-	envBeaconNodeURL       = "BEACON_NODE_URL"
-	envExecutionNodeURL    = "EXECUTION_NODE_URL"
-	envCacheResetInterval  = "CACHE_RESET_INTERVAL"
-	envEpochUpdateInterval = "EPOCH_UPDATE_INTERVAL"
-	envStartEpoch          = "START_EPOCH"
-	envBackfillConcurrency = "BACKFILL_CONCURRENCY"
+	envServerAddress           = "SERVER_ADDRESS"
+	envServerPort              = "SERVER_PORT"
+	envRequestTimeout          = "REQUEST_TIMEOUT"
+	envDefaultLimit            = "DEFAULT_API_LIMIT"
+	envDepositorLabelsFile     = "DEPOSITOR_LABELS_FILE"
+	envDoraPostgresURL         = "DORA_PG_URL"
+	envBeaconNodeURL           = "BEACON_NODE_URL"
+	envExecutionNodeURL        = "EXECUTION_NODE_URL"
+	envCacheResetInterval      = "CACHE_RESET_INTERVAL"
+	envEpochUpdateInterval     = "EPOCH_UPDATE_INTERVAL"
+	envStartEpoch              = "START_EPOCH"
+	envBackfillConcurrency     = "BACKFILL_CONCURRENCY"
 	envEpochProcessMaxRetries  = "EPOCH_PROCESS_MAX_RETRIES"
 	envEpochProcessBaseBackoff = "EPOCH_PROCESS_BASE_BACKOFF"
 	envEpochProcessMaxBackoff  = "EPOCH_PROCESS_MAX_BACKOFF"
@@ -85,6 +86,10 @@ var envBindings = []envBinding{
 			return fmt.Errorf("default limit must be > 0")
 		}
 		cfg.DefaultAPILimit = limit
+		return nil
+	}},
+	{envDepositorLabelsFile, func(cfg *Config, value string) error {
+		cfg.DepositorLabelsFile = value
 		return nil
 	}},
 	{envDoraPostgresURL, func(cfg *Config, value string) error {

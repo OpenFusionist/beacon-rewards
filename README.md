@@ -55,6 +55,7 @@ The service can be configured using environment variables:
 | `SERVER_PORT` | HTTP server port | `8080` |
 | `REQUEST_TIMEOUT` | Timeout for DB-backed HTTP handlers | `10s` |
 | `DEFAULT_API_LIMIT` | Default result size for deposit endpoints | `100` |
+| `DEPOSITOR_LABELS_FILE` | Path to a YAML file mapping depositor addresses to labels | `depositor-name.yaml` |
 | `BEACON_NODE_URL` | Beacon chain node URL | `http://localhost:5052` |
 | `EXECUTION_NODE_URL` | Execution layer node URL | `http://localhost:8545` |
 | `DORA_PG_URL` | Dora Postgres URL (DSN) | `postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable` |

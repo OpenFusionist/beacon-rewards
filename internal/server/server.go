@@ -26,11 +26,12 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	config         *config.Config
-	rewardsService *rewards.Service
-	doraDB         *dora.DB
-	router         *gin.Engine
-	httpServer     *http.Server
+	config          *config.Config
+	rewardsService  *rewards.Service
+	doraDB          *dora.DB
+	router          *gin.Engine
+	httpServer      *http.Server
+	depositorLabels map[string]string
 }
 
 // NewServer creates a new HTTP server
@@ -40,11 +41,17 @@ func NewServer(cfg *config.Config, rewardsService *rewards.Service, doraDB *dora
 	router.Use(gin.Recovery())
 	router.Use(loggingMiddleware())
 
+	depositorLabels, err := loadDepositorLabels(cfg.DepositorLabelsFile)
+	if err != nil {
+		slog.Warn("Failed to load depositor labels", "path", cfg.DepositorLabelsFile, "error", err)
+	}
+
 	s := &Server{
-		config:         cfg,
-		rewardsService: rewardsService,
-		doraDB:         doraDB,
-		router:         router,
+		config:          cfg,
+		rewardsService:  rewardsService,
+		doraDB:          doraDB,
+		router:          router,
+		depositorLabels: depositorLabels,
 	}
 
 	s.setupRoutes()
@@ -131,7 +138,12 @@ func (s *Server) topDepositsHandler(c *gin.Context) {
 	}
 
 	s.respondWithTop(c, func(ctx context.Context, limit int) (any, error) {
-		return s.doraDB.TopDepositorAddresses(ctx, limit)
+		stats, err := s.doraDB.TopDepositorAddresses(ctx, limit)
+		if err != nil {
+			return nil, err
+		}
+		s.applyDepositorLabels(stats)
+		return stats, nil
 	})
 }
 

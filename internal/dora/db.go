@@ -88,6 +88,7 @@ LIMIT $1`
 // DepositorStat represents aggregated deposits for the depositor (tx sender) address.
 type DepositorStat struct {
 	DepositorAddress string `json:"depositor_address"`
+	DepositorLabel   string `json:"depositor_label,omitempty"`
 	TotalDeposit     int64  `json:"total_deposit"`
 	ValidatorsTotal  int64  `json:"validators_total"`
 	Slashed          int64  `json:"slashed"`
