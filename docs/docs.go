@@ -24,13 +24,27 @@ const docTemplate = `{
                 "tags": [
                     "Deposits"
                 ],
-                "summary": "Top depositors by deposited amount",
+                "summary": "aggregates deposit amounts \u0026\u0026 validator counts by depositor (tx sender) and returns top N by validator counts.",
                 "parameters": [
                     {
                         "type": "integer",
                         "default": 100,
                         "description": "Number of results to return",
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "total_deposit",
+                        "description": "Sort field (total_deposit,depositor_address,validators_total, slashed, voluntary_exited, active)",
+                        "name": "sort_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "desc",
+                        "description": "Sort order (asc|desc)",
+                        "name": "order",
                         "in": "query"
                     }
                 ],
@@ -71,13 +85,27 @@ const docTemplate = `{
                 "tags": [
                     "Deposits"
                 ],
-                "summary": "Top withdrawals by aggregated deposit amount",
+                "summary": "aggregates deposit amounts \u0026\u0026 validator counts by withdrawal address and returns top N by validator counts.",
                 "parameters": [
                     {
                         "type": "integer",
                         "default": 100,
                         "description": "Number of results to return",
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "total_deposit",
+                        "description": "Sort field (total_deposit,withdrawal_address,validators_total, slashed, voluntary_exited, active)",
+                        "name": "sort_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "desc",
+                        "description": "Sort order (asc|desc)",
+                        "name": "order",
                         "in": "query"
                     }
                 ],
@@ -141,7 +169,7 @@ const docTemplate = `{
                 "tags": [
                     "Rewards"
                 ],
-                "summary": "Get total rewards (EL+CL) for validators",
+                "summary": "Get total rewards (EL+CL) for validators from Today's rewards from UTC 0:00 to the present.",
                 "parameters": [
                     {
                         "description": "Validators request",
@@ -172,9 +200,71 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/rewards/by-address": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rewards"
+                ],
+                "parameters": [
+                    {
+                        "description": "Addresses request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/server.AddressRewardsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "server.AddressRewardsRequest": {
+            "type": "object",
+            "required": [
+                "address"
+            ],
+            "properties": {
+                "address": {
+                    "type": "string"
+                }
+            }
+        },
         "server.RewardsRequest": {
             "type": "object",
             "required": [

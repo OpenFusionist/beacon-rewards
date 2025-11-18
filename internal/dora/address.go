@@ -30,28 +30,3 @@ func NormalizeAddress(address string) (string, error) {
 
 	return "0x" + strings.ToLower(trimmed), nil
 }
-
-// NormalizeAddresses normalizes and de-duplicates addresses while keeping the first occurrence order.
-func NormalizeAddresses(addresses []string) ([]string, error) {
-	if len(addresses) == 0 {
-		return []string{}, nil
-	}
-
-	seen := make(map[string]struct{}, len(addresses))
-	normalized := make([]string, 0, len(addresses))
-
-	for _, addr := range addresses {
-		normalizedAddr, err := NormalizeAddress(addr)
-		if err != nil {
-			return nil, err
-		}
-
-		if _, exists := seen[normalizedAddr]; exists {
-			continue
-		}
-		seen[normalizedAddr] = struct{}{}
-		normalized = append(normalized, normalizedAddr)
-	}
-
-	return normalized, nil
-}

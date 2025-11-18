@@ -175,63 +175,40 @@ func queryStats[T any](ctx context.Context, db *sql.DB, limit int, query string,
 	return results, nil
 }
 
-// ValidatorsByDepositorAddresses returns the validator indices funded by the provided depositor (tx sender) addresses.
-func (d *DB) ValidatorsByDepositorAddresses(ctx context.Context, addresses []string) (map[string][]uint64, error) {
+// ValidatorsIndexByAddress returns the validator indices funded by the deposit or withdrawal address
+// return []validator_index
+func (d *DB) ValidatorsIndexByAddress(ctx context.Context, addresses string) ([]uint64, error) {
 	if d == nil || d.db == nil {
-		return map[string][]uint64{}, nil
-	}
-
-	normalized, err := NormalizeAddresses(addresses)
-	if err != nil {
-		return nil, err
-	}
-
-	results := make(map[string][]uint64, len(normalized))
-	for _, addr := range normalized {
-		results[addr] = []uint64{}
-	}
-
-	if len(normalized) == 0 {
-		return results, nil
+		return nil, nil
 	}
 
 	rows, err := d.db.QueryContext(ctx, `
-SELECT
-  '0x' || encode(dt.tx_sender,'hex') AS depositor_address,
-  array_agg(DISTINCT v.validator_index) FILTER (WHERE v.validator_index IS NOT NULL) AS validator_indices
+(SELECT
+  v.validator_index AS validator_index
 FROM deposit_txs dt
 LEFT JOIN validators v ON dt.publickey = v.pubkey
-WHERE '0x' || encode(dt.tx_sender,'hex') = ANY($1)
-GROUP BY depositor_address
-`, pq.Array(normalized))
+WHERE '0x' || encode(dt.tx_sender,'hex') = lower($1))
+union all
+(SELECT
+  v.validator_index AS validator_index
+FROM validators v
+WHERE '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') = lower($1))
+`, addresses)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	result := make([]uint64, 0)
 	for rows.Next() {
-		var address string
-		var validatorIndices pq.Int64Array
-		if err := rows.Scan(&address, (*pq.Int64Array)(&validatorIndices)); err != nil {
+		var idx int64
+		if err := rows.Scan(&idx); err != nil {
 			return nil, err
 		}
-
-		validators := make([]uint64, 0, len(validatorIndices))
-		for _, idx := range validatorIndices {
-			if idx < 0 {
-				continue
-			}
-			validators = append(validators, uint64(idx))
-		}
-
-		results[strings.ToLower(address)] = validators
+		result = append(result, uint64(idx))
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return results, nil
+	return result, nil
 }
 
 // EffectiveBalances returns the effective_balance for the requested validator indices.

@@ -179,7 +179,7 @@ type RewardsRequest struct {
 
 // AddressRewardsRequest represents the request body for reward aggregation per depositor address.
 type AddressRewardsRequest struct {
-	Addresses []string `json:"addresses" binding:"required"`
+	Address string `json:"address" binding:"required"`
 }
 
 // AddressRewardsResult captures the aggregated rewards per depositor address.
@@ -241,9 +241,9 @@ func (s *Server) rewardsHandler(c *gin.Context) {
 	})
 }
 
-// addressRewardsHandler aggregates validator rewards across depositor (tx sender) addresses.
-// @Summary      Get aggregated validator rewards (EL+CL) per depositor address.
-// @Description  Looks up validators funded by each depositor (tx sender) address and returns the summed rewards for those validators.
+// addressRewardsHandler aggregates validator rewards by withdrawal or deposit addresses.
+// @Summary      Get aggregated validator rewards (EL+CL) per withdrawal or deposit address.
+// @Description  Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators.// 
 // @Tags         Rewards
 // @Accept       json
 // @Produce      json
@@ -260,14 +260,14 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 	var req AddressRewardsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request body: addresses array is required",
+			"error": "Invalid request body: address is required",
 		})
 		return
 	}
 
-	if len(req.Addresses) == 0 {
+	if strings.TrimSpace(req.Address) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Addresses array cannot be empty",
+			"error": "Address cannot be empty",
 		})
 		return
 	}
@@ -275,69 +275,67 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 	ctx, cancel := s.requestContext(c)
 	defer cancel()
 
-	addressValidators, err := s.doraDB.ValidatorsByDepositorAddresses(ctx, req.Addresses)
+	// 1) Handle withdrawal credentials: e.g.0x0100000000000000000000000988dc1554cf6877508208fff8aab4e5afa11ee3
+	if strings.HasPrefix(req.Address, "0x01") || strings.HasPrefix(req.Address, "0x02") {
+		// withdrawal_credentials: 0x01 (or 0x02) + 11 bytes zero + 20 bytes ETH address
+		// hex: "0x01" or "0x02" (2+2) + 22 zeros (11 bytes) + 40 chars (20 bytes)
+		if len(req.Address) == 66 { // "0x" + 64 hex chars for withdrawal_credentials
+			req.Address = strings.ToLower("0x" + req.Address[26:])
+			slog.Info("withdrawal address", "address", req.Address)
+		}
+	}
+
+	validatorIndices, err := s.doraDB.ValidatorsIndexByAddress(ctx, req.Address)
 	if err != nil {
 		if errors.Is(err, dora.ErrInvalidAddress) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		slog.Error("Failed to load validators by address", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load validators for addresses"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load validator index for addresses"})
 		return
-	}
-
-	validatorSet := make(map[uint64]struct{})
-	for _, validators := range addressValidators {
-		for _, idx := range validators {
-			validatorSet[idx] = struct{}{}
-		}
-	}
-	allValidators := make([]uint64, 0, len(validatorSet))
-	for idx := range validatorSet {
-		allValidators = append(allValidators, idx)
 	}
 
 	// load effective balances for all validators
 	effectiveBalances := map[uint64]int64{}
-	if len(allValidators) > 0 {
-		if balances, err := s.doraDB.EffectiveBalances(ctx, allValidators); err != nil {
+	if len(validatorIndices) > 0 {
+		if balances, err := s.doraDB.EffectiveBalances(ctx, validatorIndices); err != nil {
 			slog.Error("Failed to load effective balances", "error", err)
 		} else {
 			effectiveBalances = balances
 		}
 	}
 
-	validatorRewards := s.rewardsService.GetTotalRewards(allValidators, effectiveBalances)
+	validatorRewards := s.rewardsService.GetTotalRewards(validatorIndices, effectiveBalances)
 
-	results := make(map[string]AddressRewardsResult, len(addressValidators))
-	for addr, validators := range addressValidators {
-		entry := AddressRewardsResult{
-			Address:        addr,
-			ValidatorCount: len(validators),
-		}
-
-		if label, ok := s.lookupDepositorLabel(addr); ok {
-			entry.DepositorLabel = label
-		}
-
-		for _, idx := range validators {
-			reward, ok := validatorRewards[idx]
-			if !ok {
-				continue
-			}
-			entry.ClRewardsGwei += reward.ClRewardsGwei
-			entry.ElRewardsGwei += reward.ElRewardsGwei
-			entry.TotalRewardsGwei += reward.TotalRewardsGwei
-			entry.TotalEffectiveBalanceGwei += reward.EffectiveBalanceGwei
-		}
-
-		results[addr] = entry
+	entry := AddressRewardsResult{
+		ValidatorCount: len(validatorIndices),
 	}
 
+	if label, ok := s.lookupDepositorLabel(req.Address); ok {
+		entry.DepositorLabel = label
+	}
+
+	for _, idx := range validatorIndices {
+		reward, ok := validatorRewards[idx]
+		if !ok {
+			continue
+		}
+		entry.ClRewardsGwei += reward.ClRewardsGwei
+		entry.ElRewardsGwei += reward.ElRewardsGwei
+		entry.TotalRewardsGwei += reward.TotalRewardsGwei
+		entry.TotalEffectiveBalanceGwei += reward.EffectiveBalanceGwei
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"address_count": len(results),
-		"results":       results,
+		"address":                      req.Address,
+		"depositor_label":              entry.DepositorLabel,
+		"validator_count":              entry.ValidatorCount,
+		"cl_rewards_gwei":              entry.ClRewardsGwei,
+		"el_rewards_gwei":              entry.ElRewardsGwei,
+		"total_rewards_gwei":           entry.TotalRewardsGwei,
+		"total_effective_balance_gwei": entry.TotalEffectiveBalanceGwei,
 	})
+
 }
 
 func (s *Server) ensureDoraDB(c *gin.Context) bool {

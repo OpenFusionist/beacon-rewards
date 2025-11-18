@@ -1,4 +1,11 @@
 definitions:
+  server.AddressRewardsRequest:
+    properties:
+      address:
+        type: string
+    required:
+    - address
+    type: object
   server.RewardsRequest:
     properties:
       validators:
@@ -19,6 +26,17 @@ paths:
         in: query
         name: limit
         type: integer
+      - default: total_deposit
+        description: Sort field (total_deposit,depositor_address,validators_total,
+          slashed, voluntary_exited, active)
+        in: query
+        name: sort_by
+        type: string
+      - default: desc
+        description: Sort order (asc|desc)
+        in: query
+        name: order
+        type: string
       produces:
       - application/json
       responses:
@@ -39,7 +57,8 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: Top depositors by deposited amount
+      summary: aggregates deposit amounts && validator counts by depositor (tx sender)
+        and returns top N by validator counts.
       tags:
       - Deposits
   /deposits/top-withdrawals:
@@ -50,6 +69,17 @@ paths:
         in: query
         name: limit
         type: integer
+      - default: total_deposit
+        description: Sort field (total_deposit,withdrawal_address,validators_total,
+          slashed, voluntary_exited, active)
+        in: query
+        name: sort_by
+        type: string
+      - default: desc
+        description: Sort order (asc|desc)
+        in: query
+        name: order
+        type: string
       produces:
       - application/json
       responses:
@@ -70,7 +100,8 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: Top withdrawals by aggregated deposit amount
+      summary: aggregates deposit amounts && validator counts by withdrawal address
+        and returns top N by validator counts.
       tags:
       - Deposits
   /health:
@@ -111,7 +142,41 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: Get total rewards (EL+CL) for validators
+      summary: Get total rewards (EL+CL) for validators from Today's rewards from
+        UTC 0:00 to the present.
+      tags:
+      - Rewards
+  /rewards/by-address:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Addresses request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/server.AddressRewardsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       tags:
       - Rewards
 swagger: "2.0"
