@@ -270,16 +270,18 @@ func (s *Service) GetAllRewards() map[uint64]*types.ValidatorEpochIncome {
 	return result
 }
 
-// ValidatorReward represents the total reward (EL + CL) for a single validator
+// ValidatorReward represents the total reward (EL + CL) for a single validator.
 type ValidatorReward struct {
-	ValidatorIndex   uint64 `json:"validator_index"`
-	ClRewardsGwei    int64  `json:"cl_rewards_gwei"`    // CL rewards in gwei
-	ElRewardsGwei    int64  `json:"el_rewards_gwei"`    // EL rewards in gwei
-	TotalRewardsGwei int64  `json:"total_rewards_gwei"` // Total (CL + EL) in gwei
+	ValidatorIndex       uint64  `json:"validator_index"`
+	ClRewardsGwei        int64   `json:"cl_rewards_gwei"`
+	ElRewardsGwei        int64   `json:"el_rewards_gwei"`
+	TotalRewardsGwei     int64   `json:"total_rewards_gwei"`
+	EffectiveBalanceGwei int64   `json:"effective_balance_gwei"`
+	APY1D                float64 `json:"1d_apy"`
 }
 
-// GetTotalRewards returns the sum of EL+CL rewards for each validator
-func (s *Service) GetTotalRewards(validatorIndices []uint64) map[uint64]*ValidatorReward {
+// GetTotalRewards returns the sum of EL+CL rewards for each validator and derives simple APY estimates.
+func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances map[uint64]int64) map[uint64]*ValidatorReward {
 	s.cacheMux.RLock()
 	defer s.cacheMux.RUnlock()
 
@@ -300,6 +302,14 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64) map[uint64]*Validat
 		clRewardsWei := new(big.Int).Mul(big.NewInt(reward.ClRewardsGwei), gweiScalar)
 		totalRewardsWei := new(big.Int).Add(clRewardsWei, elRewardsWei)
 		reward.TotalRewardsGwei = new(big.Int).Div(totalRewardsWei, gweiScalar).Int64()
+		reward.EffectiveBalanceGwei = effectiveBalances[index]
+		// calculate duration since current UTC+8 midnight
+		utcPlusEight := time.FixedZone("UTC+8", 8*60*60)
+		now := time.Now().In(utcPlusEight)
+		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, utcPlusEight)
+		duration := now.Sub(midnight)
+		durationSeconds := duration.Seconds()
+		reward.APY1D = float64(reward.TotalRewardsGwei) / float64(reward.EffectiveBalanceGwei) * durationSeconds / s.config.CacheResetInterval.Seconds() * 100.0
 
 		result[index] = reward
 	}

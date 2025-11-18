@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"endurance-rewards/internal/config"
 	"fmt"
+
+	"github.com/lib/pq"
 )
 
 const defaultStatsLimit = 100
@@ -146,4 +148,47 @@ func queryStats[T any](ctx context.Context, db *sql.DB, limit int, query string,
 	}
 
 	return results, nil
+}
+
+// EffectiveBalances returns the effective_balance for the requested validator indices.
+func (d *DB) EffectiveBalances(ctx context.Context, indices []uint64) (map[uint64]int64, error) {
+	if d == nil || d.db == nil || len(indices) == 0 {
+		return map[uint64]int64{}, nil
+	}
+
+	unique := make(map[uint64]struct{}, len(indices))
+	ids := make([]int64, 0, len(indices))
+	for _, idx := range indices {
+		if _, exists := unique[idx]; exists {
+			continue
+		}
+		unique[idx] = struct{}{}
+		ids = append(ids, int64(idx))
+	}
+
+	rows, err := d.db.QueryContext(ctx, `
+SELECT validator_index, effective_balance
+FROM validators
+WHERE validator_index = ANY($1)
+`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	balances := make(map[uint64]int64, len(ids))
+	for rows.Next() {
+		var idx int64
+		var balance int64
+		if err := rows.Scan(&idx, &balance); err != nil {
+			return nil, err
+		}
+		balances[uint64(idx)] = balance
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return balances, nil
 }
