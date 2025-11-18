@@ -186,8 +186,20 @@ func (s *Server) rewardsHandler(c *gin.Context) {
 		return
 	}
 
+	var effectiveBalances map[uint64]int64
+	if s.doraDB != nil {
+		ctx, cancel := s.requestContext(c)
+		balances, err := s.doraDB.EffectiveBalances(ctx, req.Validators)
+		cancel()
+		if err != nil {
+			slog.Error("Failed to load effective balances", "error", err)
+		} else {
+			effectiveBalances = balances
+		}
+	}
+
 	// Get total rewards (EL+CL) for each requested validator
-	validatorRewards := s.rewardsService.GetTotalRewards(req.Validators)
+	validatorRewards := s.rewardsService.GetTotalRewards(req.Validators, effectiveBalances)
 
 	c.JSON(http.StatusOK, gin.H{
 		"validator_count": len(req.Validators),
