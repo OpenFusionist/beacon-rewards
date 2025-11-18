@@ -8,8 +8,8 @@ build:
 	go build -o bin/rewards ./cmd/rewards
 
 # Run the application
-run:
-	go run ./cmd/rewards/main.go
+run: build
+	./bin/rewards
 
 # Clean build artifacts
 clean:
@@ -27,5 +27,4 @@ lint:
 deps:
 	go mod download
 	go mod tidy
-
 

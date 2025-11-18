@@ -277,7 +277,7 @@ type ValidatorReward struct {
 	ElRewardsGwei        int64   `json:"el_rewards_gwei"`
 	TotalRewardsGwei     int64   `json:"total_rewards_gwei"`
 	EffectiveBalanceGwei int64   `json:"effective_balance_gwei"`
-	APY1D                float64 `json:"1d_apy"`
+	APR1D                float64 `json:"1d_apr"`
 }
 
 // GetTotalRewards returns the sum of EL+CL rewards for each validator and derives simple APY estimates.
@@ -309,7 +309,8 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances m
 		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, utcPlusEight)
 		duration := now.Sub(midnight)
 		durationSeconds := duration.Seconds()
-		reward.APY1D = float64(reward.TotalRewardsGwei) / float64(reward.EffectiveBalanceGwei) * durationSeconds / s.config.CacheResetInterval.Seconds() * 100.0
+		// calculate APR1D = (TotalRewardsGwei / EffectiveBalanceGwei) * (CacheResetInterval / Duration) * 100.0 * 365.0
+		reward.APR1D = float64(reward.TotalRewardsGwei) / float64(reward.EffectiveBalanceGwei) * s.config.CacheResetInterval.Seconds() / durationSeconds * 100.0 * 365.0
 
 		result[index] = reward
 	}
