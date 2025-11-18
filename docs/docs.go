@@ -203,6 +203,7 @@ const docTemplate = `{
         },
         "/rewards/by-address": {
             "post": {
+                "description": "Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators.//",
                 "consumes": [
                     "application/json"
                 ],
@@ -212,6 +213,7 @@ const docTemplate = `{
                 "tags": [
                     "Rewards"
                 ],
+                "summary": "Get aggregated validator rewards (EL+CL) per withdrawal or deposit address.",
                 "parameters": [
                     {
                         "description": "Addresses request",
@@ -247,6 +249,27 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/rewards/network": {
+            "get": {
+                "description": "Uses cached consensus/execution rewards to calculate global CL/EL totals and a daily APR estimate.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rewards"
+                ],
+                "summary": "Get total validator rewards for the latest 24h window",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }

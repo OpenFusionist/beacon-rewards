@@ -17,6 +17,7 @@ const (
 	envBeaconNodeURL           = "BEACON_NODE_URL"
 	envExecutionNodeURL        = "EXECUTION_NODE_URL"
 	envCacheResetInterval      = "CACHE_RESET_INTERVAL"
+	envRewardsHistoryFile      = "REWARDS_HISTORY_FILE"
 	envEpochUpdateInterval     = "EPOCH_UPDATE_INTERVAL"
 	envStartEpoch              = "START_EPOCH"
 	envBackfillConcurrency     = "BACKFILL_CONCURRENCY"
@@ -113,6 +114,10 @@ var envBindings = []envBinding{
 			return fmt.Errorf("duration must be > 0")
 		}
 		cfg.CacheResetInterval = dur
+		return nil
+	}},
+	{envRewardsHistoryFile, func(cfg *Config, value string) error {
+		cfg.RewardsHistoryFile = value
 		return nil
 	}},
 	{envEpochUpdateInterval, func(cfg *Config, value string) error {

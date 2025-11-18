@@ -66,6 +66,7 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/health", s.healthHandler)
 
 	// Rewards endpoint
+	s.router.GET("/rewards/network", s.networkRewardsHandler)
 	s.router.POST("/rewards", s.rewardsHandler)
 	s.router.POST("/rewards/by-address", s.addressRewardsHandler)
 
@@ -172,6 +173,32 @@ func (s *Server) topWithdrawalsHandler(c *gin.Context) {
 	})
 }
 
+// networkRewardsHandler returns aggregated cache rewards for all validators over the last 24h window.
+// @Summary      Get total validator rewards for the latest 24h window
+// @Description  Uses cached consensus/execution rewards to calculate global CL/EL totals and a daily APR estimate.
+// @Tags         Rewards
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Router       /rewards/network [get]
+func (s *Server) networkRewardsHandler(c *gin.Context) {
+	snapshot := s.rewardsService.TotalNetworkRewards()
+	historyEntries, err := s.rewardsService.RewardHistory()
+	if err != nil {
+		slog.Error("Failed to load rewards history", "error", err)
+	}
+
+	response := gin.H{
+		"current": snapshot,
+	}
+	if err != nil {
+		response["history_error"] = "failed to load stored history"
+	} else if len(historyEntries) > 0 {
+		response["history"] = historyEntries
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 // RewardsRequest represents the request body for rewards query
 type RewardsRequest struct {
 	Validators []uint64 `json:"validators" binding:"required"`
@@ -243,7 +270,7 @@ func (s *Server) rewardsHandler(c *gin.Context) {
 
 // addressRewardsHandler aggregates validator rewards by withdrawal or deposit addresses.
 // @Summary      Get aggregated validator rewards (EL+CL) per withdrawal or deposit address.
-// @Description  Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators.// 
+// @Description  Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators.//
 // @Tags         Rewards
 // @Accept       json
 // @Produce      json

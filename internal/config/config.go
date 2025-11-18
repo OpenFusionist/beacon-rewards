@@ -22,6 +22,7 @@ type Config struct {
 
 	// Cache configuration.
 	CacheResetInterval time.Duration
+	RewardsHistoryFile string
 
 	// Epoch processing configuration.
 	EpochUpdateInterval     time.Duration
@@ -46,6 +47,7 @@ func DefaultConfig() *Config {
 		BeaconNodeURL:           "http://localhost:5052",
 		ExecutionNodeURL:        "http://localhost:8545",
 		CacheResetInterval:      24 * time.Hour,
+		RewardsHistoryFile:      "data/reward_history.jsonl",
 		EpochUpdateInterval:     384 * time.Second, // ~32 slots
 		StartEpoch:              0,
 		EpochProcessMaxRetries:  5,

@@ -56,18 +56,21 @@ func main() {
 		os.Exit(1)
 	}
 	logConfig(cfg)
-	// Create rewards service
-	rewardsService := rewards.NewService(cfg)
-	if err := rewardsService.Start(); err != nil {
-		slog.Error("Failed to start rewards service", "error", err)
-		os.Exit(1)
-	}
 
 	var doraDB *dora.DB
 	if db, err := dora.New(cfg); err != nil {
 		slog.Error("Failed to connect to Dora Postgres", "error", err)
 	} else {
 		doraDB = db
+	}
+
+	// Create rewards service
+	rewardsService := rewards.NewService(cfg)
+	// Attach Dora DB so service can sum effective balances
+	rewardsService.SetDoraDB(doraDB)
+	if err := rewardsService.Start(); err != nil {
+		slog.Error("Failed to start rewards service", "error", err)
+		os.Exit(1)
 	}
 
 	// Create and start HTTP server

@@ -3,6 +3,7 @@ package rewards
 import (
 	"context"
 	"endurance-rewards/internal/config"
+	"endurance-rewards/internal/dora"
 	"fmt"
 	"log/slog"
 	"math/big"
@@ -21,20 +22,25 @@ const (
 	SLOTS_PER_EPOCH   = 32
 	SECONDS_PER_EPOCH = SECONDS_PER_SLOT * SLOTS_PER_EPOCH
 	// 2024-03-04 06:00:00 +0000 UTC
-	GENESIS_TIMESTAMP = 1709532000
+	GENESIS_TIMESTAMP                 = 1709532000
+	defaultEffectiveBalanceGwei int64 = 32_000_000_000
 )
 
 var gweiScalar = big.NewInt(1_000_000_000)
 
 // Service manages validator reward statistics
 type Service struct {
-	config   *config.Config
-	beaconCL *beacon.Client
-	elClient *string
-	cache    map[uint64]*types.ValidatorEpochIncome
-	cacheMux sync.RWMutex
-	ctx      context.Context
-	cancel   context.CancelFunc
+	config           *config.Config
+	beaconCL         *beacon.Client
+	elClient         *string
+	cache            map[uint64]*types.ValidatorEpochIncome
+	cacheMux         sync.RWMutex
+	history          *HistoryStore
+	cacheWindowStart time.Time
+	cacheWindowMu    sync.RWMutex
+	ctx              context.Context
+	cancel           context.CancelFunc
+	doraDB           *dora.DB
 }
 
 // NewService creates a new rewards service
@@ -42,15 +48,26 @@ func NewService(cfg *config.Config) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	beaconClient := beacon.NewClient(cfg.BeaconNodeURL, time.Minute*5)
+	historyStore := NewHistoryStore(cfg.RewardsHistoryFile)
 
-	return &Service{
+	s := &Service{
 		config:   cfg,
 		beaconCL: beaconClient,
 		elClient: &cfg.ExecutionNodeURL,
 		cache:    make(map[uint64]*types.ValidatorEpochIncome),
+		history:  historyStore,
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+
+	s.setCacheWindowStart(s.midnightUTC8(time.Now()))
+
+	return s
+}
+
+// SetDoraDB attaches a Dora DB handle for effective balance lookups (optional).
+func (s *Service) SetDoraDB(db *dora.DB) {
+	s.doraDB = db
 }
 
 // Start begins the reward tracking service
@@ -270,6 +287,66 @@ func (s *Service) GetAllRewards() map[uint64]*types.ValidatorEpochIncome {
 	return result
 }
 
+// TotalNetworkRewards sums CL/EL rewards for every cached validator and derives APR for the window.
+func (s *Service) TotalNetworkRewards() *NetworkRewardSnapshot {
+	s.cacheMux.RLock()
+	defer s.cacheMux.RUnlock()
+	return s.computeNetworkSnapshotLocked(time.Now())
+}
+
+// RewardHistory returns all persisted daily snapshots.
+func (s *Service) RewardHistory() ([]NetworkRewardSnapshot, error) {
+	if s.history == nil {
+		return []NetworkRewardSnapshot{}, nil
+	}
+	return s.history.ReadAll()
+}
+
+func (s *Service) computeNetworkSnapshotLocked(now time.Time) *NetworkRewardSnapshot {
+	snapshot := &NetworkRewardSnapshot{
+		WindowStart: s.cacheWindowStartTime().UTC(),
+		WindowEnd:   now.UTC(),
+	}
+	duration := snapshot.WindowEnd.Sub(snapshot.WindowStart)
+	if duration <= 0 {
+		duration = s.config.CacheResetInterval
+		snapshot.WindowStart = snapshot.WindowEnd.Add(-duration)
+	}
+	snapshot.WindowDurationSeconds = duration.Seconds()
+
+	var clRewardsTotal int64
+	elRewardsWei := big.NewInt(0)
+	for _, income := range s.cache {
+		if income == nil {
+			continue
+		}
+		clRewardsTotal += income.TotalClRewards()
+		elRewardsWei.Add(elRewardsWei, weiBytesToBigInt(income.TxFeeRewardWei))
+	}
+	elRewardsGwei := new(big.Int).Div(elRewardsWei, gweiScalar).Int64()
+	snapshot.ValidatorCount = len(s.cache)
+	snapshot.ClRewardsGwei = clRewardsTotal
+	snapshot.ElRewardsGwei = elRewardsGwei
+	snapshot.TotalRewardsGwei = clRewardsTotal + elRewardsGwei
+
+	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
+	totalEffective, err := s.doraDB.TotalEffectiveBalance(ctx)
+	cancel()
+	if err != nil {
+		slog.Error("Failed to sum effective balances from Dora", "error", err)
+	}
+	snapshot.TotalEffectiveBalanceGwei = totalEffective
+
+	if snapshot.TotalEffectiveBalanceGwei > 0 && snapshot.WindowDurationSeconds > 0 {
+		apr := float64(snapshot.TotalRewardsGwei) / float64(snapshot.TotalEffectiveBalanceGwei)
+		apr *= s.config.CacheResetInterval.Seconds() / snapshot.WindowDurationSeconds
+		apr *= 100.0 * 365.0
+		snapshot.DailyAprPercent = apr
+	}
+
+	return snapshot
+}
+
 // ValidatorReward represents the total reward (EL + CL) for a single validator.
 type ValidatorReward struct {
 	ValidatorIndex       uint64  `json:"validator_index"`
@@ -303,14 +380,15 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances m
 		totalRewardsWei := new(big.Int).Add(clRewardsWei, elRewardsWei)
 		reward.TotalRewardsGwei = new(big.Int).Div(totalRewardsWei, gweiScalar).Int64()
 		reward.EffectiveBalanceGwei = effectiveBalances[index]
-		// calculate duration since current UTC+8 midnight
-		utcPlusEight := time.FixedZone("UTC+8", 8*60*60)
-		now := time.Now().In(utcPlusEight)
-		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, utcPlusEight)
-		duration := now.Sub(midnight)
-		durationSeconds := duration.Seconds()
-		// calculate APR1D = (TotalRewardsGwei / EffectiveBalanceGwei) * (CacheResetInterval / Duration) * 100.0 * 365.0
-		reward.APR1D = float64(reward.TotalRewardsGwei) / float64(reward.EffectiveBalanceGwei) * s.config.CacheResetInterval.Seconds() / durationSeconds * 100.0 * 365.0
+		durationSeconds := time.Since(s.cacheWindowStartTime()).Seconds()
+		if durationSeconds <= 0 {
+			durationSeconds = s.config.CacheResetInterval.Seconds()
+		}
+		if reward.EffectiveBalanceGwei > 0 && durationSeconds > 0 {
+			reward.APR1D = float64(reward.TotalRewardsGwei) / float64(reward.EffectiveBalanceGwei)
+			reward.APR1D *= s.config.CacheResetInterval.Seconds() / durationSeconds
+			reward.APR1D *= 100.0 * 365.0
+		}
 
 		result[index] = reward
 	}
@@ -319,10 +397,33 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances m
 }
 
 func (s *Service) currentMidnightEpoch() uint64 {
-	loc := time.FixedZone("UTC+8", 8*60*60)
-	now := time.Now().In(loc)
-	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	midnight := s.midnightUTC8(time.Now())
 	return s.getCurrentEpoch(midnight)
+}
+
+func (s *Service) midnightUTC8(t time.Time) time.Time {
+	loc := time.FixedZone("UTC+8", 8*60*60)
+	local := t.In(loc)
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+}
+
+func (s *Service) setCacheWindowStart(ts time.Time) {
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	s.cacheWindowMu.Lock()
+	s.cacheWindowStart = ts
+	s.cacheWindowMu.Unlock()
+}
+
+func (s *Service) cacheWindowStartTime() time.Time {
+	s.cacheWindowMu.RLock()
+	start := s.cacheWindowStart
+	s.cacheWindowMu.RUnlock()
+	if start.IsZero() {
+		return time.Now().Add(-s.config.CacheResetInterval)
+	}
+	return start
 }
 
 func (s *Service) determineLiveStartEpoch(midnightEpoch uint64) uint64 {
@@ -378,11 +479,28 @@ func (s *Service) workerCount() int {
 
 func (s *Service) resetCache() int {
 	s.cacheMux.Lock()
-	defer s.cacheMux.Unlock()
-
 	size := len(s.cache)
+	var snapshot *NetworkRewardSnapshot
+	if size > 0 {
+		snapshot = s.computeNetworkSnapshotLocked(time.Now())
+	}
 	s.cache = make(map[uint64]*types.ValidatorEpochIncome)
+	s.cacheMux.Unlock()
+
+	if size > 0 {
+		s.persistSnapshot(snapshot)
+	}
+	s.setCacheWindowStart(time.Now())
 	return size
+}
+
+func (s *Service) persistSnapshot(snapshot *NetworkRewardSnapshot) {
+	if snapshot == nil || s.history == nil {
+		return
+	}
+	if err := s.history.Append(snapshot); err != nil {
+		slog.Error("Failed to persist reward snapshot", "error", err, "path", s.history.Path())
+	}
 }
 
 // getCurrentEpoch fetches the current epoch from the beacon chain

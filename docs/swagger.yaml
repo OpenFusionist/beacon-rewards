@@ -150,6 +150,8 @@ paths:
     post:
       consumes:
       - application/json
+      description: Looks up validators funded by withdrawal or deposit address and
+        returns the summed rewards for those validators.//
       parameters:
       - description: Addresses request
         in: body
@@ -177,6 +179,23 @@ paths:
             additionalProperties:
               type: string
             type: object
+      summary: Get aggregated validator rewards (EL+CL) per withdrawal or deposit
+        address.
+      tags:
+      - Rewards
+  /rewards/network:
+    get:
+      description: Uses cached consensus/execution rewards to calculate global CL/EL
+        totals and a daily APR estimate.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get total validator rewards for the latest 24h window
       tags:
       - Rewards
 swagger: "2.0"

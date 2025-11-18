@@ -211,7 +211,7 @@ WHERE '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') = lower($1
 	return result, nil
 }
 
-// EffectiveBalances returns the effective_balance for the requested validator indices.
+// TODO:optimize EffectiveBalances returns the effective_balance for the requested validator indices.
 func (d *DB) EffectiveBalances(ctx context.Context, indices []uint64) (map[uint64]int64, error) {
 	if d == nil || d.db == nil || len(indices) == 0 {
 		return map[uint64]int64{}, nil
@@ -252,4 +252,20 @@ WHERE validator_index = ANY($1)
 	}
 
 	return balances, nil
+}
+
+// TotalEffectiveBalance returns the sum of effective_balance across all validators.
+func (d *DB) TotalEffectiveBalance(ctx context.Context) (int64, error) {
+	if d == nil || d.db == nil {
+		return 0, nil
+	}
+	row := d.db.QueryRowContext(ctx, `
+SELECT COALESCE(SUM(effective_balance), 0)::bigint
+FROM validators
+`)
+	var sum int64
+	if err := row.Scan(&sum); err != nil {
+		return 0, err
+	}
+	return sum, nil
 }
