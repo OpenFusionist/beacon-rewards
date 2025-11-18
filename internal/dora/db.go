@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"endurance-rewards/internal/config"
 	"fmt"
+	"strings"
 
 	"github.com/lib/pq"
 )
@@ -71,7 +72,7 @@ type ValidatorStatus struct {
 // Normalization: for withdrawal credentials with prefix 0x01 or 0x02, the execution-layer address is stored
 // in the last 20 bytes of the 32-byte credentials. We group by those last 20 bytes regardless of prefix
 // to treat 0x01 and 0x02 as the same address.
-func (d *DB) TopWithdrawalAddresses(ctx context.Context, limit int, sortBy string) ([]WithdrawalStat, error) {
+func (d *DB) TopWithdrawalAddresses(ctx context.Context, limit int, sortBy string, order string) ([]WithdrawalStat, error) {
 	const baseQuery = `
 SELECT
   '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') AS withdrawal_address,
@@ -82,10 +83,10 @@ SELECT
   COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance > 0) AS active
 FROM validators v  left join deposits d on v.pubkey  = d.publickey 
 GROUP BY withdrawal_address
-ORDER BY %s DESC
+ORDER BY %s %s
 LIMIT $1`
 
-	q := fmt.Sprintf(baseQuery, OrderBy(sortBy))
+	q := fmt.Sprintf(baseQuery, OrderBy(sortBy), OrderDirection(order))
 
 	return queryStats(ctx, d.db, limit, q, func(rows *sql.Rows, stat *WithdrawalStat) error {
 		return rows.Scan(
@@ -100,7 +101,7 @@ LIMIT $1`
 }
 
 // TopDepositorAddresses aggregates deposits by transaction sender and returns top N by validator count.
-func (d *DB) TopDepositorAddresses(ctx context.Context, limit int, sortBy string) ([]DepositorStat, error) {
+func (d *DB) TopDepositorAddresses(ctx context.Context, limit int, sortBy string, order string) ([]DepositorStat, error) {
 	const baseQuery = `
 SELECT
   '0x' || encode(dt.tx_sender,'hex') as depositor_address,
@@ -112,10 +113,10 @@ SELECT
 FROM deposit_txs dt 
 LEFT JOIN validators v ON dt.publickey = v.pubkey 
 GROUP BY depositor_address
-ORDER BY %s DESC
+ORDER BY %s %s
 LIMIT $1`
 
-	q := fmt.Sprintf(baseQuery, OrderBy(sortBy))
+	q := fmt.Sprintf(baseQuery, OrderBy(sortBy), OrderDirection(order))
 
 	return queryStats(ctx, d.db, limit, q, func(rows *sql.Rows, stat *DepositorStat) error {
 		return rows.Scan(
@@ -135,6 +136,15 @@ func OrderBy(sortBy string) string {
 		return sortBy
 	default:
 		return "total_deposit"
+	}
+}
+
+func OrderDirection(order string) string {
+	switch strings.ToLower(order) {
+	case "asc":
+		return "ASC"
+	default:
+		return "DESC"
 	}
 }
 
