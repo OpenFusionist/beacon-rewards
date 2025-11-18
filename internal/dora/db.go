@@ -47,11 +47,23 @@ func (d *DB) Close() {
 // WithdrawalStat represents aggregated deposits for a withdrawal address.
 type WithdrawalStat struct {
 	WithdrawalAddress string `json:"withdrawal_address"`
-	TotalAmount       int64  `json:"total_amount"`
-	ValidatorsTotal   int64  `json:"validators_total"`
-	Slashed           int64  `json:"slashed"`
-	VoluntaryExited   int64  `json:"voluntary_exited"`
-	Active            int64  `json:"active"`
+	ValidatorStatus
+}
+
+// DepositorStat represents aggregated deposits for the depositor (tx sender) address.
+type DepositorStat struct {
+	DepositorAddress string `json:"depositor_address"`
+	DepositorLabel   string `json:"depositor_label,omitempty"`
+	ValidatorStatus
+}
+
+// ValidatorStatus captures validator status counts shared by depositor/withdrawal stats.
+type ValidatorStatus struct {
+	TotalDeposit    int64 `json:"total_deposit"`
+	ValidatorsTotal int64 `json:"validators_total"`
+	Slashed         int64 `json:"slashed"`
+	VoluntaryExited int64 `json:"voluntary_exited"`
+	Active          int64 `json:"active"`
 }
 
 // TopWithdrawalAddresses aggregates deposits by normalized withdrawal address and returns top N by amount.
@@ -59,24 +71,26 @@ type WithdrawalStat struct {
 // Normalization: for withdrawal credentials with prefix 0x01 or 0x02, the execution-layer address is stored
 // in the last 20 bytes of the 32-byte credentials. We group by those last 20 bytes regardless of prefix
 // to treat 0x01 and 0x02 as the same address.
-func (d *DB) TopWithdrawalAddresses(ctx context.Context, limit int) ([]WithdrawalStat, error) {
-	const q = `
+func (d *DB) TopWithdrawalAddresses(ctx context.Context, limit int, sortBy string) ([]WithdrawalStat, error) {
+	const baseQuery = `
 SELECT
   '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') AS withdrawal_address,
-  COALESCE(SUM(d.amount), 0)::bigint AS total_amount,
+  COALESCE(SUM(d.amount), 0)::bigint AS total_deposit,
   COUNT(DISTINCT v.validator_index) AS validators_total,
   COUNT(DISTINCT v.validator_index) FILTER (WHERE v.slashed) AS slashed,
   COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance = 0) AS voluntary_exited,
   COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance > 0) AS active
 FROM validators v  left join deposits d on v.pubkey  = d.publickey 
 GROUP BY withdrawal_address
-ORDER BY validators_total DESC
+ORDER BY %s DESC
 LIMIT $1`
+
+	q := fmt.Sprintf(baseQuery, OrderBy(sortBy))
 
 	return queryStats(ctx, d.db, limit, q, func(rows *sql.Rows, stat *WithdrawalStat) error {
 		return rows.Scan(
 			&stat.WithdrawalAddress,
-			&stat.TotalAmount,
+			&stat.TotalDeposit,
 			&stat.ValidatorsTotal,
 			&stat.Slashed,
 			&stat.VoluntaryExited,
@@ -85,20 +99,9 @@ LIMIT $1`
 	})
 }
 
-// DepositorStat represents aggregated deposits for the depositor (tx sender) address.
-type DepositorStat struct {
-	DepositorAddress string `json:"depositor_address"`
-	DepositorLabel   string `json:"depositor_label,omitempty"`
-	TotalDeposit     int64  `json:"total_deposit"`
-	ValidatorsTotal  int64  `json:"validators_total"`
-	Slashed          int64  `json:"slashed"`
-	VoluntaryExited  int64  `json:"voluntary_exited"`
-	Active           int64  `json:"active"`
-}
-
 // TopDepositorAddresses aggregates deposits by transaction sender and returns top N by validator count.
-func (d *DB) TopDepositorAddresses(ctx context.Context, limit int) ([]DepositorStat, error) {
-	const q = `
+func (d *DB) TopDepositorAddresses(ctx context.Context, limit int, sortBy string) ([]DepositorStat, error) {
+	const baseQuery = `
 SELECT
   '0x' || encode(dt.tx_sender,'hex') as depositor_address,
   SUM(dt.amount)::bigint AS total_deposit,
@@ -109,8 +112,10 @@ SELECT
 FROM deposit_txs dt 
 LEFT JOIN validators v ON dt.publickey = v.pubkey 
 GROUP BY depositor_address
-ORDER BY validators_total desc
+ORDER BY %s DESC
 LIMIT $1`
+
+	q := fmt.Sprintf(baseQuery, OrderBy(sortBy))
 
 	return queryStats(ctx, d.db, limit, q, func(rows *sql.Rows, stat *DepositorStat) error {
 		return rows.Scan(
@@ -122,6 +127,15 @@ LIMIT $1`
 			&stat.Active,
 		)
 	})
+}
+
+func OrderBy(sortBy string) string {
+	switch sortBy {
+	case "depositor_address", "withdrawal_address", "validators_total", "slashed", "voluntary_exited", "active", "total_amount":
+		return sortBy
+	default:
+		return "total_deposit"
+	}
 }
 
 func queryStats[T any](ctx context.Context, db *sql.DB, limit int, query string, scan func(*sql.Rows, *T) error) ([]T, error) {

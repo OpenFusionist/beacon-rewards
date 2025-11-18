@@ -7,6 +7,7 @@ import (
 	"endurance-rewards/internal/rewards"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"log/slog"
@@ -127,7 +128,8 @@ func (s *Server) healthHandler(c *gin.Context) {
 // @Summary      aggregates deposit amounts && validator counts by depositor (tx sender) and returns top N by validator counts.
 // @Tags         Deposits
 // @Produce      json
-// @Param        limit   query     int  false  "Number of results to return"  default(100)
+// @Param        limit    query     int     false  "Number of results to return"  default(100)
+// @Param        sort_by  query     string  false  "Sort field (total_deposit,depositor_address,validators_total, slashed, voluntary_exited, active)"  default(total_deposit)
 // @Success      200     {object}  map[string]interface{}
 // @Failure      503     {object}  map[string]string
 // @Failure      500     {object}  map[string]string
@@ -137,8 +139,8 @@ func (s *Server) topDepositsHandler(c *gin.Context) {
 		return
 	}
 
-	s.respondWithTop(c, func(ctx context.Context, limit int) (any, error) {
-		stats, err := s.doraDB.TopDepositorAddresses(ctx, limit)
+	s.respondWithTop(c, func(ctx context.Context, limit int, sortBy string) (any, error) {
+		stats, err := s.doraDB.TopDepositorAddresses(ctx, limit, sortBy)
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +153,8 @@ func (s *Server) topDepositsHandler(c *gin.Context) {
 // @Summary      aggregates deposit amounts && validator counts by withdrawal address and returns top N by validator counts.
 // @Tags         Deposits
 // @Produce      json
-// @Param        limit   query     int  false  "Number of results to return"  default(100)
+// @Param        limit    query     int     false  "Number of results to return"  default(100)
+// @Param        sort_by  query     string  false  "Sort field (total_deposit,withdrawal_address,validators_total, slashed, voluntary_exited, active)"  default(total_deposit)
 // @Success      200     {object}  map[string]interface{}
 // @Failure      503     {object}  map[string]string
 // @Failure      500     {object}  map[string]string
@@ -161,8 +164,8 @@ func (s *Server) topWithdrawalsHandler(c *gin.Context) {
 		return
 	}
 
-	s.respondWithTop(c, func(ctx context.Context, limit int) (any, error) {
-		return s.doraDB.TopWithdrawalAddresses(ctx, limit)
+	s.respondWithTop(c, func(ctx context.Context, limit int, sortBy string) (any, error) {
+		return s.doraDB.TopWithdrawalAddresses(ctx, limit, sortBy)
 	})
 }
 
@@ -251,12 +254,13 @@ func (s *Server) requestContext(c *gin.Context) (context.Context, context.Cancel
 	return context.WithTimeout(c.Request.Context(), timeout)
 }
 
-func (s *Server) respondWithTop(c *gin.Context, fetch func(context.Context, int) (any, error)) {
+func (s *Server) respondWithTop(c *gin.Context, fetch func(context.Context, int, string) (any, error)) {
 	limit := s.limitParam(c)
+	sortBy := strings.TrimSpace(c.Query("sort_by"))
 	ctx, cancel := s.requestContext(c)
 	defer cancel()
 
-	results, err := fetch(ctx, limit)
+	results, err := fetch(ctx, limit, sortBy)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
