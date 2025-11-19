@@ -6,6 +6,27 @@ definitions:
     required:
     - address
     type: object
+  server.AddressRewardsResult:
+    properties:
+      address:
+        type: string
+      cl_rewards_gwei:
+        type: integer
+      depositor_label:
+        type: string
+      el_rewards_gwei:
+        type: integer
+      total_effective_balance_gwei:
+        type: integer
+      total_rewards_gwei:
+        type: integer
+      validator_count:
+        type: integer
+      window_end:
+        type: string
+      window_start:
+        type: string
+    type: object
   server.RewardsRequest:
     properties:
       validators:
@@ -151,7 +172,7 @@ paths:
       consumes:
       - application/json
       description: Looks up validators funded by withdrawal or deposit address and
-        returns the summed rewards for those validators.//
+        returns the summed rewards for those validators.
       parameters:
       - description: Addresses request
         in: body
@@ -165,8 +186,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/server.AddressRewardsResult'
         "400":
           description: Bad Request
           schema:
@@ -195,7 +215,7 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Get total validator rewards for the latest 24h window
+      summary: Get total validator rewards for the config window
       tags:
       - Rewards
 swagger: "2.0"

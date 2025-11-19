@@ -338,6 +338,9 @@ func (s *Service) computeNetworkSnapshotLocked(now time.Time) *NetworkRewardSnap
 	if err != nil {
 		slog.Error("Failed to sum effective balances from Dora", "error", err)
 	}
+	if totalEffective == 0 {
+		totalEffective = int64(len(s.cache)) * defaultEffectiveBalanceGwei
+	}
 	snapshot.TotalEffectiveBalanceGwei = totalEffective
 
 	if snapshot.TotalEffectiveBalanceGwei > 0 && snapshot.WindowDurationSeconds > 0 {
@@ -378,6 +381,11 @@ type ValidatorReward struct {
 	TotalRewardsGwei     int64   `json:"total_rewards_gwei"`
 	EffectiveBalanceGwei int64   `json:"effective_balance_gwei"`
 	APR1D                float64 `json:"1d_apr"`
+}
+
+// GetRewardWindow returns the current reward accumulation window.
+func (s *Service) GetRewardWindow() (time.Time, time.Time) {
+	return s.cacheWindowStartTime().UTC(), time.Now().UTC()
 }
 
 // GetTotalRewards returns the sum of EL+CL rewards for each validator and derives simple APY estimates.

@@ -203,7 +203,7 @@ const docTemplate = `{
         },
         "/rewards/by-address": {
             "post": {
-                "description": "Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators.//",
+                "description": "Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators.",
                 "consumes": [
                     "application/json"
                 ],
@@ -229,8 +229,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/server.AddressRewardsResult"
                         }
                     },
                     "400": {
@@ -263,7 +262,7 @@ const docTemplate = `{
                 "tags": [
                     "Rewards"
                 ],
-                "summary": "Get total validator rewards for the latest 24h window",
+                "summary": "Get total validator rewards for the config window",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -284,6 +283,38 @@ const docTemplate = `{
             ],
             "properties": {
                 "address": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.AddressRewardsResult": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "cl_rewards_gwei": {
+                    "type": "integer"
+                },
+                "depositor_label": {
+                    "type": "string"
+                },
+                "el_rewards_gwei": {
+                    "type": "integer"
+                },
+                "total_effective_balance_gwei": {
+                    "type": "integer"
+                },
+                "total_rewards_gwei": {
+                    "type": "integer"
+                },
+                "validator_count": {
+                    "type": "integer"
+                },
+                "window_end": {
+                    "type": "string"
+                },
+                "window_start": {
                     "type": "string"
                 }
             }

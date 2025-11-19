@@ -173,8 +173,8 @@ func (s *Server) topWithdrawalsHandler(c *gin.Context) {
 	})
 }
 
-// networkRewardsHandler returns aggregated cache rewards for all validators over the last 24h window.
-// @Summary      Get total validator rewards for the latest 24h window
+// networkRewardsHandler returns aggregated cache rewards for all validators over the config window.
+// @Summary      Get total validator rewards for the config window
 // @Description  Uses cached consensus/execution rewards to calculate global CL/EL totals and a daily APR estimate.
 // @Tags         Rewards
 // @Produce      json
@@ -211,13 +211,15 @@ type AddressRewardsRequest struct {
 
 // AddressRewardsResult captures the aggregated rewards per depositor address.
 type AddressRewardsResult struct {
-	Address                   string `json:"address"`
-	DepositorLabel            string `json:"depositor_label,omitempty"`
-	ValidatorCount            int    `json:"validator_count"`
-	ClRewardsGwei             int64  `json:"cl_rewards_gwei"`
-	ElRewardsGwei             int64  `json:"el_rewards_gwei"`
-	TotalRewardsGwei          int64  `json:"total_rewards_gwei"`
-	TotalEffectiveBalanceGwei int64  `json:"total_effective_balance_gwei"`
+	Address                   string    `json:"address"`
+	DepositorLabel            string    `json:"depositor_label,omitempty"`
+	ValidatorCount            int       `json:"validator_count"`
+	ClRewardsGwei             int64     `json:"cl_rewards_gwei"`
+	ElRewardsGwei             int64     `json:"el_rewards_gwei"`
+	TotalRewardsGwei          int64     `json:"total_rewards_gwei"`
+	TotalEffectiveBalanceGwei int64     `json:"total_effective_balance_gwei"`
+	WindowStart               time.Time `json:"window_start"`
+	WindowEnd                 time.Time `json:"window_end"`
 }
 
 // rewardsHandler handles reward queries
@@ -270,12 +272,12 @@ func (s *Server) rewardsHandler(c *gin.Context) {
 
 // addressRewardsHandler aggregates validator rewards by withdrawal or deposit addresses.
 // @Summary      Get aggregated validator rewards (EL+CL) per withdrawal or deposit address.
-// @Description  Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators.//
+// @Description  Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators.
 // @Tags         Rewards
 // @Accept       json
 // @Produce      json
 // @Param        request  body   AddressRewardsRequest  true  "Addresses request"
-// @Success      200      {object}  map[string]interface{}
+// @Success      200      {object}  AddressRewardsResult
 // @Failure      400      {object}  map[string]string
 // @Failure      503      {object}  map[string]string
 // @Router       /rewards/by-address [post]
@@ -334,13 +336,17 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 	}
 
 	validatorRewards := s.rewardsService.GetTotalRewards(validatorIndices, effectiveBalances)
+	windowStart, windowEnd := s.rewardsService.GetRewardWindow()
 
-	entry := AddressRewardsResult{
+	result := AddressRewardsResult{
+		Address:        req.Address,
 		ValidatorCount: len(validatorIndices),
+		WindowStart:    windowStart,
+		WindowEnd:      windowEnd,
 	}
 
 	if label, ok := s.lookupDepositorLabel(req.Address); ok {
-		entry.DepositorLabel = label
+		result.DepositorLabel = label
 	}
 
 	for _, idx := range validatorIndices {
@@ -348,20 +354,12 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		if !ok {
 			continue
 		}
-		entry.ClRewardsGwei += reward.ClRewardsGwei
-		entry.ElRewardsGwei += reward.ElRewardsGwei
-		entry.TotalRewardsGwei += reward.TotalRewardsGwei
-		entry.TotalEffectiveBalanceGwei += reward.EffectiveBalanceGwei
+		result.ClRewardsGwei += reward.ClRewardsGwei
+		result.ElRewardsGwei += reward.ElRewardsGwei
+		result.TotalRewardsGwei += reward.TotalRewardsGwei
+		result.TotalEffectiveBalanceGwei += reward.EffectiveBalanceGwei
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"address":                      req.Address,
-		"depositor_label":              entry.DepositorLabel,
-		"validator_count":              entry.ValidatorCount,
-		"cl_rewards_gwei":              entry.ClRewardsGwei,
-		"el_rewards_gwei":              entry.ElRewardsGwei,
-		"total_rewards_gwei":           entry.TotalRewardsGwei,
-		"total_effective_balance_gwei": entry.TotalEffectiveBalanceGwei,
-	})
+	c.JSON(http.StatusOK, result)
 
 }
 
