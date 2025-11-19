@@ -184,7 +184,7 @@ func (s *Server) topWithdrawalsHandler(c *gin.Context) {
 // @Router       /rewards/network [get]
 func (s *Server) networkRewardsHandler(c *gin.Context) {
 	snapshot := s.rewardsService.TotalNetworkRewards()
-	historyEntries, err := s.rewardsService.RewardHistory()
+	historyEntries, err := s.rewardsService.NetworkRewardHistory()
 	if err != nil {
 		slog.Error("Failed to load rewards history", "error", err)
 	}

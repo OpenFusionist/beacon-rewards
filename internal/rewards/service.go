@@ -18,7 +18,6 @@ import (
 	"endurance-rewards/internal/dora"
 	"endurance-rewards/internal/utils"
 
-	"github.com/gobitfly/eth-rewards/beacon"
 	"github.com/gobitfly/eth-rewards/elrewards"
 	"github.com/gobitfly/eth-rewards/types"
 	"golang.org/x/sync/errgroup"
@@ -56,7 +55,7 @@ type ValidatorReward struct {
 // Service manages validator reward statistics
 type Service struct {
 	config   *config.Config
-	beaconCL *beacon.Client
+	beaconCL *NodePool
 	elClient *string
 	doraDB   *dora.DB
 	ctx      context.Context
@@ -77,11 +76,11 @@ type Service struct {
 // NewService creates a new rewards service
 func NewService(cfg *config.Config) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
-	beaconClient := beacon.NewClient(cfg.BeaconNodeURL, time.Minute*5)
+	nodePool := NewNodePool(cfg.BeaconNodeURL, time.Minute*5)
 
 	s := &Service{
 		config:      cfg,
-		beaconCL:    beaconClient,
+		beaconCL:    nodePool,
 		elClient:    &cfg.ExecutionNodeURL,
 		cache:       make(map[uint64]*types.ValidatorEpochIncome),
 		historyPath: strings.TrimSpace(cfg.RewardsHistoryFile),
@@ -344,7 +343,7 @@ func (s *Service) TotalNetworkRewards() *NetworkRewardSnapshot {
 	return s.computeNetworkSnapshotLocked(time.Now())
 }
 
-func (s *Service) RewardHistory() ([]NetworkRewardSnapshot, error) {
+func (s *Service) NetworkRewardHistory() ([]NetworkRewardSnapshot, error) {
 	if s.historyPath == "" {
 		return nil, nil
 	}
