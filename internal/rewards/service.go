@@ -49,7 +49,7 @@ type ValidatorReward struct {
 	ElRewardsGwei        int64   `json:"el_rewards_gwei"`
 	TotalRewardsGwei     int64   `json:"total_rewards_gwei"`
 	EffectiveBalanceGwei int64   `json:"effective_balance_gwei"`
-	APR1D                float64 `json:"1d_apr"`
+	ProjectAPRPercent           float64 `json:"project_apr_percent"`
 }
 
 // Service manages validator reward statistics
@@ -380,9 +380,12 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances m
 	if duration <= 0 {
 		duration = s.config.CacheResetInterval.Seconds()
 	}
+	// use network snapshot for project APR calculation
+	snapshot := s.computeNetworkSnapshotLocked(time.Now())
 
 	result := make(map[uint64]*ValidatorReward, len(validatorIndices))
 	for _, index := range validatorIndices {
+
 		income, exists := s.cache[index]
 		if !exists {
 			continue
@@ -404,12 +407,8 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances m
 			EffectiveBalanceGwei: bal,
 		}
 
-		if bal > 0 && duration > 0 {
-			apr := float64(totalGwei) / float64(bal)
-			apr *= s.config.CacheResetInterval.Seconds() / duration
-			apr *= 100.0 * 365.0
-			r.APR1D = apr
-		}
+		r.ProjectAPRPercent = snapshot.ProjectAprPercent
+
 		result[index] = r
 	}
 	return result
