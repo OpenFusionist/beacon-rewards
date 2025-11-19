@@ -25,6 +25,7 @@ The service is structured into several components:
 - Go 1.23 or higher
 - Access to an Ethereum beacon node (e.g., Lighthouse, Prysm, Teku)
 - Access to an Ethereum execution node (e.g., Geth, Nethermind, Besu)
+- Docker
 
 ## Installation
 
@@ -95,6 +96,35 @@ export BEACON_NODE_URL=https://your-beacon-node.com
 export EXECUTION_NODE_URL=https://your-execution-node.com
 export SERVER_PORT=9090
 make run
+```
+
+### Using Docker
+
+You can build and run the application using Docker.
+
+#### Build the Image
+
+```bash
+docker build -t endurance-rewards .
+```
+
+#### Run the Container
+
+
+```bash
+docker run -p 8080:8080 \
+  --env-file $(pwd)/.env \
+  -v $(pwd)/data:/app/data \
+  --restart=unless-stopped \
+  --name endurance-rewards \
+  -d \
+  endurance-rewards
+
+
+```
+
+> **Note**: Ensure the `data` directory exists on your host machine and has appropriate write permissions if you encounter issues, though Docker usually handles this.
+
 ```
 
 ## API Endpoints
