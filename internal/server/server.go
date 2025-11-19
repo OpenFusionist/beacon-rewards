@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"golang.org/x/sync/errgroup"
 )
 
 // @title           Endurance Rewards API
@@ -218,6 +219,7 @@ type AddressRewardsResult struct {
 	ElRewardsGwei             int64     `json:"el_rewards_gwei"`
 	TotalRewardsGwei          int64     `json:"total_rewards_gwei"`
 	TotalEffectiveBalanceGwei int64     `json:"total_effective_balance_gwei"`
+	WeightedAverageStakeTime  int64     `json:"weighted_average_stake_time(seconds)"`
 	WindowStart               time.Time `json:"window_start"`
 	WindowEnd                 time.Time `json:"window_end"`
 }
@@ -326,24 +328,54 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		return
 	}
 
-	// load effective balances for all validators
-	effectiveBalances := map[uint64]int64{}
-	if len(validatorIndices) > 0 {
-		if balances, err := s.doraDB.EffectiveBalances(ctx, validatorIndices); err != nil {
-			slog.Error("Failed to load effective balances", "error", err)
-		} else {
+	var (
+		effectiveBalances    map[uint64]int64
+		weightedAvgStakeTime int64
+	)
+
+	g, gCtx := errgroup.WithContext(ctx)
+
+	// 1. Load effective balances
+	g.Go(func() error {
+		if len(validatorIndices) > 0 {
+			balances, err := s.doraDB.EffectiveBalances(gCtx, validatorIndices)
+			if err != nil {
+				slog.Error("Failed to load effective balances", "error", err)
+				// Don't fail the request, just log error
+				return nil
+			}
 			effectiveBalances = balances
 		}
+		return nil
+	})
+
+	// 2. Calculate weighted average stake time
+	g.Go(func() error {
+		if len(validatorIndices) > 0 {
+			avg, err := s.doraDB.GetWeightedAverageStakeTime(gCtx, validatorIndices)
+			if err != nil {
+				slog.Error("Failed to calculate weighted average stake time", "error", err)
+				// Don't fail the request, just log error
+				return nil
+			}
+			weightedAvgStakeTime = avg
+		}
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		slog.Error("Error in parallel requests", "error", err)
 	}
 
 	validatorRewards := s.rewardsService.GetTotalRewards(validatorIndices, effectiveBalances)
 	windowStart, windowEnd := s.rewardsService.GetRewardWindow()
 
 	result := AddressRewardsResult{
-		Address:              req.Address,
-		ActiveValidatorCount: len(validatorIndices),
-		WindowStart:          windowStart,
-		WindowEnd:            windowEnd,
+		Address:                  req.Address,
+		ActiveValidatorCount:     len(validatorIndices),
+		WindowStart:              windowStart,
+		WindowEnd:                windowEnd,
+		WeightedAverageStakeTime: weightedAvgStakeTime,
 	}
 
 	if label, ok := s.lookupDepositorLabel(req.Address); ok {

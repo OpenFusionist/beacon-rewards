@@ -300,6 +300,42 @@ WHERE activation_epoch <= $1 AND exit_epoch > $1
 	return sum, nil
 }
 
+// GetWeightedAverageStakeTime calculates the weighted average stake time (duration) for the given validator indices.
+// Formula: sum(amount * (now - block_time)) / sum(amount)
+func (d *DB) GetWeightedAverageStakeTime(ctx context.Context, indices []uint64) (int64, error) {
+	if d == nil || d.db == nil || len(indices) == 0 {
+		return 0, nil
+	}
+
+	unique := make(map[uint64]struct{}, len(indices))
+	ids := make([]int64, 0, len(indices))
+	for _, idx := range indices {
+		if _, exists := unique[idx]; exists {
+			continue
+		}
+		unique[idx] = struct{}{}
+		ids = append(ids, int64(idx))
+	}
+
+	row := d.db.QueryRowContext(ctx, `
+SELECT
+  COALESCE(
+    SUM(dt.amount::numeric * (EXTRACT(EPOCH FROM NOW())::bigint - dt.block_time)::numeric) / NULLIF(SUM(dt.amount::numeric), 0),
+    0
+  )::bigint
+FROM deposit_txs dt
+JOIN validators v ON dt.publickey = v.pubkey
+WHERE v.validator_index = ANY($1)
+`, pq.Array(ids))
+
+	var weightedAvg int64
+	if err := row.Scan(&weightedAvg); err != nil {
+		return 0, err
+	}
+
+	return weightedAvg, nil
+}
+
 // ConvertInt64ToUint64 reverses the -2^63 shift applied to epoch fields stored in Dora.
 // The database keeps uint64 epochs in signed BIGINT columns by subtracting 2^63.
 // Adding the shift restores the original ordering and range.
