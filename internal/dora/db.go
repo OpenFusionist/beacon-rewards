@@ -136,7 +136,7 @@ LIMIT $1`
 
 func OrderBy(sortBy string) string {
 	switch sortBy {
-	case "depositor_address", "withdrawal_address", "validators_total", "slashed", "voluntary_exited", "active", "total_amount":
+	case "depositor_address", "withdrawal_address", "validators_total", "slashed", "voluntary_exited", "active":
 		return sortBy
 	default:
 		return "total_deposit"

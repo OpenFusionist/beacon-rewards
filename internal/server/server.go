@@ -329,6 +329,19 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		return
 	}
 
+	// Remove duplicates from validatorIndices
+	//eg.when fetching validator indices by depositor and withdrawal address, returning duplicates whenever the same address funded and withdrew for a validator
+	// very common for solo staker
+	uniqueMap := make(map[uint64]struct{}, len(validatorIndices))
+	uniqueIndices := make([]uint64, 0, len(validatorIndices))
+	for _, idx := range validatorIndices {
+		if _, exists := uniqueMap[idx]; !exists {
+			uniqueMap[idx] = struct{}{}
+			uniqueIndices = append(uniqueIndices, idx)
+		}
+	}
+	validatorIndices = uniqueIndices
+
 	var (
 		effectiveBalances    map[uint64]int64
 		weightedAvgStakeTime int64
