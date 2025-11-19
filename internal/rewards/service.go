@@ -109,7 +109,7 @@ func (s *Service) epochProcessor(startFrom uint64) {
 			return
 		case <-ticker.C:
 			// Only process up to the latest completed epoch (N-1). If current epoch is not yet completed, wait.
-			latest := s.getCurrentEpoch(time.Now())
+			latest := s.GetCurrentEpoch(time.Now())
 			if latest == 0 || currentEpoch > (latest-1) {
 				slog.Info("No completed epoch to process yet", "current_epoch", currentEpoch, "latest_now", latest)
 				continue
@@ -357,7 +357,7 @@ func (s *Service) countActiveValidators(now time.Time) (int64, error) {
 	if s.doraDB == nil {
 		return 0, nil
 	}
-	epoch := s.getCurrentEpoch(now)
+	epoch := s.GetCurrentEpoch(now)
 	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
 	defer cancel()
 	return s.doraDB.ActiveValidatorCount(ctx, epoch)
@@ -367,7 +367,7 @@ func (s *Service) totalEffectiveBalance(now time.Time) (int64, error) {
 	if s.doraDB == nil {
 		return 0, nil
 	}
-	epoch := s.getCurrentEpoch(now)
+	epoch := s.GetCurrentEpoch(now)
 	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
 	defer cancel()
 	return s.doraDB.TotalEffectiveBalance(ctx, epoch)
@@ -429,7 +429,7 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances m
 
 func (s *Service) currentMidnightEpoch() uint64 {
 	midnight := s.midnightUTC8(time.Now())
-	return s.getCurrentEpoch(midnight)
+	return s.GetCurrentEpoch(midnight)
 }
 
 func (s *Service) midnightUTC8(t time.Time) time.Time {
@@ -461,7 +461,7 @@ func (s *Service) determineLiveStartEpoch(midnightEpoch uint64) uint64 {
 	switch {
 	case s.config.StartEpoch == 0:
 		// Start live processing from the next epoch after the latest completed epoch
-		latest := s.getCurrentEpoch(time.Now())
+		latest := s.GetCurrentEpoch(time.Now())
 		if latest == 0 {
 			return 0
 		}
@@ -477,7 +477,7 @@ func (s *Service) backfillRange(midnightEpoch uint64) (uint64, uint64, bool) {
 	start := s.config.StartEpoch
 	if start == 0 {
 		// Default: backfill from midnight to the current latest epoch
-		latest := s.getCurrentEpoch(time.Now())
+		latest := s.GetCurrentEpoch(time.Now())
 		// Only backfill up to the latest completed epoch (N-1)
 		if latest == 0 {
 			return 0, 0, false
@@ -534,8 +534,8 @@ func (s *Service) persistSnapshot(snapshot *NetworkRewardSnapshot) {
 	}
 }
 
-// getCurrentEpoch fetches the current epoch from the beacon chain
-func (s *Service) getCurrentEpoch(ts time.Time) uint64 {
+// GetCurrentEpoch fetches the current epoch from the beacon chain
+func (s *Service) GetCurrentEpoch(ts time.Time) uint64 {
 	if int64(GENESIS_TIMESTAMP) > ts.Unix() {
 		return 0
 	}

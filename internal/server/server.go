@@ -209,11 +209,11 @@ type AddressRewardsRequest struct {
 	Address string `json:"address" binding:"required"`
 }
 
-// AddressRewardsResult captures the aggregated rewards per depositor address.
+// AddressRewardsResult captures the aggregated rewards per depositor or withdrawal address.
 type AddressRewardsResult struct {
 	Address                   string    `json:"address"`
 	DepositorLabel            string    `json:"depositor_label,omitempty"`
-	ValidatorCount            int       `json:"validator_count"`
+	ActiveValidatorCount      int       `json:"active_validator_count"`
 	ClRewardsGwei             int64     `json:"cl_rewards_gwei"`
 	ElRewardsGwei             int64     `json:"el_rewards_gwei"`
 	TotalRewardsGwei          int64     `json:"total_rewards_gwei"`
@@ -314,7 +314,8 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		}
 	}
 
-	validatorIndices, err := s.doraDB.ValidatorsIndexByAddress(ctx, req.Address)
+	currentEpoch := s.rewardsService.GetCurrentEpoch(time.Now())
+	validatorIndices, err := s.doraDB.ActiveValidatorsIndexByAddress(ctx, req.Address, currentEpoch)
 	if err != nil {
 		if errors.Is(err, dora.ErrInvalidAddress) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -339,10 +340,10 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 	windowStart, windowEnd := s.rewardsService.GetRewardWindow()
 
 	result := AddressRewardsResult{
-		Address:        req.Address,
-		ValidatorCount: len(validatorIndices),
-		WindowStart:    windowStart,
-		WindowEnd:      windowEnd,
+		Address:              req.Address,
+		ActiveValidatorCount: len(validatorIndices),
+		WindowStart:          windowStart,
+		WindowEnd:            windowEnd,
 	}
 
 	if label, ok := s.lookupDepositorLabel(req.Address); ok {

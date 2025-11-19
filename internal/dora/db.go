@@ -179,25 +179,27 @@ func queryStats[T any](ctx context.Context, db *sql.DB, limit int, query string,
 	return results, nil
 }
 
-// ValidatorsIndexByAddress returns the validator indices funded by the deposit or withdrawal address
+// ActiveValidatorsIndexByAddress returns the validator indices funded by the deposit or withdrawal address
 // return []validator_index
-func (d *DB) ValidatorsIndexByAddress(ctx context.Context, addresses string) ([]uint64, error) {
+func (d *DB) ActiveValidatorsIndexByAddress(ctx context.Context, addresses string, epoch uint64) ([]uint64, error) {
 	if d == nil || d.db == nil {
 		return nil, nil
 	}
+
+	shiftedEpoch := convertUint64EpochToStorage(epoch)
 
 	rows, err := d.db.QueryContext(ctx, `
 (SELECT
   v.validator_index AS validator_index
 FROM deposit_txs dt
 LEFT JOIN validators v ON dt.publickey = v.pubkey
-WHERE '0x' || encode(dt.tx_sender,'hex') = lower($1))
+WHERE '0x' || encode(dt.tx_sender,'hex') = lower($1) AND v.activation_epoch <= $2 AND v.exit_epoch > $2)
 union all
 (SELECT
   v.validator_index AS validator_index
 FROM validators v
-WHERE '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') = lower($1))
-`, addresses)
+WHERE '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') = lower($1) AND v.activation_epoch <= $2 AND v.exit_epoch > $2)
+`, addresses, shiftedEpoch)
 	if err != nil {
 		return nil, err
 	}
