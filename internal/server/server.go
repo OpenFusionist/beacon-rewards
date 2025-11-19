@@ -5,6 +5,7 @@ import (
 	"endurance-rewards/internal/config"
 	"endurance-rewards/internal/dora"
 	"endurance-rewards/internal/rewards"
+	"endurance-rewards/internal/utils"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -316,7 +317,7 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		}
 	}
 
-	currentEpoch := s.rewardsService.TimeToEpoch(time.Now())
+	currentEpoch := utils.TimeToEpoch(time.Now())
 	validatorIndices, err := s.doraDB.ActiveValidatorsIndexByAddress(ctx, req.Address, currentEpoch)
 	if err != nil {
 		if errors.Is(err, dora.ErrInvalidAddress) {

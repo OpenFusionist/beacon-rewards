@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"endurance-rewards/internal/config"
+	"endurance-rewards/internal/utils"
 
 	"github.com/gobitfly/eth-rewards/types"
 )
@@ -26,7 +27,7 @@ func TestTotalNetworkRewards(t *testing.T) {
 		AttestationSourceReward: 64,
 	}
 	svc.cache[1].TxFeeRewardWei = new(big.Int).Mul(big.NewInt(5), gweiScalar).Bytes()
-	currentEpoch := svc.TimeToEpoch(time.Now())
+	currentEpoch := utils.TimeToEpoch(time.Now())
 	svc.latestSyncEpoch = currentEpoch
 	svc.cacheMux.Unlock()
 
@@ -47,7 +48,7 @@ func TestTotalNetworkRewards(t *testing.T) {
 		t.Fatalf("unexpected effective balance: %d", snapshot.TotalEffectiveBalanceGwei)
 	}
 
-	expectedEnd := svc.EpochToTime(currentEpoch)
+	expectedEnd := utils.EpochToTime(currentEpoch)
 	expectedDuration := expectedEnd.Sub(windowStart).Seconds()
 	if math.Abs(snapshot.WindowDurationSeconds-expectedDuration) > 2 {
 		t.Fatalf("duration mismatch: got %f want %f", snapshot.WindowDurationSeconds, expectedDuration)

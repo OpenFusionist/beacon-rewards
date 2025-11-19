@@ -4,6 +4,7 @@ import (
 	"context"
 	"endurance-rewards/internal/config"
 	"endurance-rewards/internal/dora"
+	"endurance-rewards/internal/utils"
 	"fmt"
 	"log/slog"
 	"math/big"
@@ -18,11 +19,6 @@ import (
 )
 
 const (
-	SECONDS_PER_SLOT  = 12
-	SLOTS_PER_EPOCH   = 32
-	SECONDS_PER_EPOCH = SECONDS_PER_SLOT * SLOTS_PER_EPOCH
-	// 2024-03-04 06:00:00 +0000 UTC
-	GENESIS_TIMESTAMP                 = 1709532000
 	defaultEffectiveBalanceGwei int64 = 32_000_000_000
 )
 
@@ -110,7 +106,7 @@ func (s *Service) epochProcessor(startFrom uint64) {
 			return
 		case <-ticker.C:
 			// Only process up to the latest completed epoch (N-1). If current epoch is not yet completed, wait.
-			latest := s.TimeToEpoch(time.Now())
+			latest := utils.TimeToEpoch(time.Now())
 			if latest == 0 || currentEpoch > (latest-1) {
 				slog.Info("No completed epoch to process yet", "current_epoch", currentEpoch, "latest_now", latest)
 				continue
@@ -243,7 +239,7 @@ func (s *Service) accumulateRewards(validatorIndex uint64, income *types.Validat
 	existing.SlashingPenalty += income.SlashingPenalty
 	existing.ProposalsMissed += income.ProposalsMissed
 
-	existing.TxFeeRewardWei = addWei(existing.TxFeeRewardWei, income.TxFeeRewardWei)
+	existing.TxFeeRewardWei = utils.AddWei(existing.TxFeeRewardWei, income.TxFeeRewardWei)
 }
 
 // cacheResetTimer periodically clears the cache
@@ -327,7 +323,7 @@ func (s *Service) computeNetworkSnapshotLocked(now time.Time) *NetworkRewardSnap
 			continue
 		}
 		clRewardsTotal += income.TotalClRewards()
-		elRewardsWei.Add(elRewardsWei, weiBytesToBigInt(income.TxFeeRewardWei))
+		elRewardsWei.Add(elRewardsWei, utils.WeiBytesToBigInt(income.TxFeeRewardWei))
 	}
 	elRewardsGwei := new(big.Int).Div(elRewardsWei, gweiScalar).Int64()
 	snapshot.ActiveValidatorCount = len(s.cache)
@@ -363,7 +359,7 @@ func (s *Service) countActiveValidators(now time.Time) (int64, error) {
 	if s.doraDB == nil {
 		return 0, nil
 	}
-	epoch := s.TimeToEpoch(now)
+	epoch := utils.TimeToEpoch(now)
 	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
 	defer cancel()
 	return s.doraDB.ActiveValidatorCount(ctx, epoch)
@@ -373,7 +369,7 @@ func (s *Service) totalEffectiveBalance(now time.Time) (int64, error) {
 	if s.doraDB == nil {
 		return 0, nil
 	}
-	epoch := s.TimeToEpoch(now)
+	epoch := utils.TimeToEpoch(now)
 	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
 	defer cancel()
 	return s.doraDB.TotalEffectiveBalance(ctx, epoch)
@@ -396,7 +392,7 @@ func (s *Service) GetRewardWindow() (time.Time, time.Time) {
 	s.cacheMux.RUnlock()
 
 	start := s.cacheWindowStartTime().UTC()
-	end := s.EpochToTime(latest)
+	end := utils.EpochToTime(latest)
 
 	if end.Before(start) {
 		return start, start
@@ -423,7 +419,7 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances m
 		reward := &ValidatorReward{ValidatorIndex: index}
 		reward.ClRewardsGwei = income.TotalClRewards()
 
-		elRewardsWei := weiBytesToBigInt(income.TxFeeRewardWei)
+		elRewardsWei := utils.WeiBytesToBigInt(income.TxFeeRewardWei)
 		reward.ElRewardsGwei = new(big.Int).Div(new(big.Int).Set(elRewardsWei), gweiScalar).Int64()
 
 		clRewardsWei := new(big.Int).Mul(big.NewInt(reward.ClRewardsGwei), gweiScalar)
@@ -447,7 +443,7 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances m
 
 func (s *Service) currentMidnightEpoch() uint64 {
 	midnight := s.midnightUTC8(time.Now())
-	return s.TimeToEpoch(midnight)
+	return utils.TimeToEpoch(midnight)
 }
 
 func (s *Service) midnightUTC8(t time.Time) time.Time {
@@ -479,7 +475,7 @@ func (s *Service) determineLiveStartEpoch(midnightEpoch uint64) uint64 {
 	switch {
 	case s.config.StartEpoch == 0:
 		// Start live processing from the next epoch after the latest completed epoch
-		latest := s.TimeToEpoch(time.Now())
+		latest := utils.TimeToEpoch(time.Now())
 		if latest == 0 {
 			return 0
 		}
@@ -495,7 +491,7 @@ func (s *Service) backfillRange(midnightEpoch uint64) (uint64, uint64, bool) {
 	start := s.config.StartEpoch
 	if start == 0 {
 		// Default: backfill from midnight to the current latest epoch
-		latest := s.TimeToEpoch(time.Now())
+		latest := utils.TimeToEpoch(time.Now())
 		// Only backfill up to the latest completed epoch (N-1)
 		if latest == 0 {
 			return 0, 0, false
@@ -551,38 +547,6 @@ func (s *Service) persistSnapshot(snapshot *NetworkRewardSnapshot) {
 	if err := s.history.Append(snapshot); err != nil {
 		slog.Error("Failed to persist reward snapshot", "error", err, "path", s.history.Path())
 	}
-}
-
-// TimeToEpoch returns the epoch of the given time.
-func (s *Service) TimeToEpoch(ts time.Time) uint64 {
-	if int64(GENESIS_TIMESTAMP) > ts.Unix() {
-		return 0
-	}
-	return uint64((ts.Unix() - int64(GENESIS_TIMESTAMP)) / int64(SECONDS_PER_SLOT) / int64(SLOTS_PER_EPOCH))
-
-}
-
-// EpochToTime returns the time of the given epoch.
-func (s *Service) EpochToTime(epoch uint64) time.Time {
-	return time.Unix(int64(GENESIS_TIMESTAMP)+(int64(epoch)+1)*int64(SECONDS_PER_EPOCH), 0).UTC()
-}
-
-func addWei(base, delta []byte) []byte {
-	if len(delta) == 0 {
-		return base
-	}
-
-	baseInt := new(big.Int).SetBytes(base)
-	deltaInt := new(big.Int).SetBytes(delta)
-	baseInt.Add(baseInt, deltaInt)
-	return baseInt.Bytes()
-}
-
-func weiBytesToBigInt(data []byte) *big.Int {
-	if len(data) == 0 {
-		return big.NewInt(0)
-	}
-	return new(big.Int).SetBytes(data)
 }
 
 // processEpochWithRetry wraps processEpoch with a simple bounded backoff retry.
