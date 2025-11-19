@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"math/big"
 	"time"
 )
 
@@ -25,22 +24,3 @@ func TimeToEpoch(ts time.Time) uint64 {
 func EpochToTime(epoch uint64) time.Time {
 	return time.Unix(int64(GENESIS_TIMESTAMP)+(int64(epoch)+1)*int64(SECONDS_PER_EPOCH), 0).UTC()
 }
-
-func AddWei(base, delta []byte) []byte {
-	if len(delta) == 0 {
-		return base
-	}
-
-	baseInt := new(big.Int).SetBytes(base)
-	deltaInt := new(big.Int).SetBytes(delta)
-	baseInt.Add(baseInt, deltaInt)
-	return baseInt.Bytes()
-}
-
-func WeiBytesToBigInt(data []byte) *big.Int {
-	if len(data) == 0 {
-		return big.NewInt(0)
-	}
-	return new(big.Int).SetBytes(data)
-}
-

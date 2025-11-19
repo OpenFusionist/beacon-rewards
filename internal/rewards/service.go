@@ -1,20 +1,26 @@
 package rewards
 
 import (
+	"bufio"
+	"bytes"
 	"context"
-	"endurance-rewards/internal/config"
-	"endurance-rewards/internal/dora"
-	"endurance-rewards/internal/utils"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/big"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"endurance-rewards/internal/config"
+	"endurance-rewards/internal/dora"
+	"endurance-rewards/internal/utils"
 
 	"github.com/gobitfly/eth-rewards/beacon"
 	"github.com/gobitfly/eth-rewards/elrewards"
 	"github.com/gobitfly/eth-rewards/types"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -24,40 +30,70 @@ const (
 
 var gweiScalar = big.NewInt(1_000_000_000)
 
+// NetworkRewardSnapshot captures aggregated reward totals for all validators within a cache window.
+type NetworkRewardSnapshot struct {
+	WindowStart               time.Time `json:"window_start"`
+	WindowEnd                 time.Time `json:"window_end"`
+	WindowDurationSeconds     float64   `json:"window_duration_seconds"`
+	ActiveValidatorCount      int       `json:"active_validator_count"`
+	ClRewardsGwei             int64     `json:"cl_rewards_gwei"`
+	ElRewardsGwei             int64     `json:"el_rewards_gwei"`
+	TotalRewardsGwei          int64     `json:"total_rewards_gwei"`
+	TotalEffectiveBalanceGwei int64     `json:"total_effective_balance_gwei"`
+	ProjectAprPercent         float64   `json:"project_apr_percent"`
+}
+
+// ValidatorReward represents the total reward (EL + CL) for a single validator.
+type ValidatorReward struct {
+	ValidatorIndex       uint64  `json:"validator_index"`
+	ClRewardsGwei        int64   `json:"cl_rewards_gwei"`
+	ElRewardsGwei        int64   `json:"el_rewards_gwei"`
+	TotalRewardsGwei     int64   `json:"total_rewards_gwei"`
+	EffectiveBalanceGwei int64   `json:"effective_balance_gwei"`
+	APR1D                float64 `json:"1d_apr"`
+}
+
 // Service manages validator reward statistics
 type Service struct {
-	config           *config.Config
-	beaconCL         *beacon.Client
-	elClient         *string
+	config   *config.Config
+	beaconCL *beacon.Client
+	elClient *string
+	doraDB   *dora.DB
+	ctx      context.Context
+	cancel   context.CancelFunc
+
+	// Cache state
 	cache            map[uint64]*types.ValidatorEpochIncome
 	cacheMux         sync.RWMutex
 	latestSyncEpoch  uint64
-	history          *HistoryStore
 	cacheWindowStart time.Time
 	cacheWindowMu    sync.RWMutex
-	ctx              context.Context
-	cancel           context.CancelFunc
-	doraDB           *dora.DB
+
+	// History state
+	historyPath string
+	historyMu   sync.Mutex
 }
 
 // NewService creates a new rewards service
 func NewService(cfg *config.Config) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
-
 	beaconClient := beacon.NewClient(cfg.BeaconNodeURL, time.Minute*5)
-	historyStore := NewHistoryStore(cfg.RewardsHistoryFile)
 
 	s := &Service{
-		config:   cfg,
-		beaconCL: beaconClient,
-		elClient: &cfg.ExecutionNodeURL,
-		cache:    make(map[uint64]*types.ValidatorEpochIncome),
-		history:  historyStore,
-		ctx:      ctx,
-		cancel:   cancel,
+		config:      cfg,
+		beaconCL:    beaconClient,
+		elClient:    &cfg.ExecutionNodeURL,
+		cache:       make(map[uint64]*types.ValidatorEpochIncome),
+		historyPath: strings.TrimSpace(cfg.RewardsHistoryFile),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 
-	s.setCacheWindowStart(s.midnightUTC8(time.Now()))
+	// Default cache window start to today 00:00 UTC+8
+	loc := time.FixedZone("UTC+8", 8*60*60)
+	now := time.Now().In(loc)
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	s.setCacheWindowStart(midnight)
 
 	return s
 }
@@ -71,16 +107,14 @@ func (s *Service) SetDoraDB(db *dora.DB) {
 func (s *Service) Start() error {
 	slog.Info("Starting rewards service")
 
-	// Trigger backfill to current UTC+8 00:00 epoch (non-blocking)
-	go s.backfillToUTCMidnight()
+	// Calculate start epoch
+	startEpoch := s.config.StartEpoch
+	if startEpoch == 0 {
+		// Default: Start from cache window start (00:00 UTC+8)
+		startEpoch = utils.TimeToEpoch(s.cacheWindowStartTime())
+	}
 
-	midnightEpoch := s.currentMidnightEpoch()
-	startFrom := s.determineLiveStartEpoch(midnightEpoch)
-
-	// Start the epoch processor
-	go s.epochProcessor(startFrom)
-
-	// Start the cache reset timer
+	go s.syncRoutine(startEpoch)
 	go s.cacheResetTimer()
 
 	return nil
@@ -92,110 +126,130 @@ func (s *Service) Stop() {
 	s.cancel()
 }
 
-// epochProcessor continuously processes epochs and updates the cache
-func (s *Service) epochProcessor(startFrom uint64) {
-	ticker := time.NewTicker(s.config.EpochUpdateInterval)
+// ---------------------------------------------------------------------
+// Sync Logic (Backfill + Live)
+// ---------------------------------------------------------------------
+
+func (s *Service) syncRoutine(startEpoch uint64) {
+	// 1. Backfill Phase
+	// Process from startEpoch up to (latest_completed - 2)
+	latestEpoch := utils.TimeToEpoch(time.Now())
+	if latestEpoch > 2 {
+		latestEpoch -= 2
+	} else {
+		latestEpoch = 0
+	}
+
+	if startEpoch <= latestEpoch {
+		slog.Info("Starting backfill", "from", startEpoch, "to", latestEpoch)
+		s.runBackfill(startEpoch, latestEpoch)
+		slog.Info("Backfill completed")
+	} else {
+		slog.Warn("Backfill skipped", "startEpoch", startEpoch, "latestEpoch", latestEpoch)
+	}
+
+	// 2. Live Sync Phase
+	// Continues strictly from latestSyncEpoch + 1
+	s.runLiveSync()
+}
+
+func (s *Service) runBackfill(from, to uint64) {
+	g, ctx := errgroup.WithContext(s.ctx)
+	g.SetLimit(s.config.BackfillConcurrency)
+
+	// Create a channel to feed epochs to workers
+	epochs := make(chan uint64)
+
+	// Producer
+	go func() {
+		defer close(epochs)
+		for e := from; e <= to; e++ {
+			select {
+			case epochs <- e:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// Consumers
+	for i := 0; i < s.config.BackfillConcurrency; i++ {
+		g.Go(func() error {
+			for epoch := range epochs {
+				if err := s.processEpochWithRetry(epoch); err != nil {
+					// In backfill, we log error but don't abort the whole group unless critical
+					slog.Error("Backfill epoch failed after retries", "epoch", epoch, "error", err)
+				}
+			}
+			return nil
+		})
+	}
+	_ = g.Wait()
+}
+
+func (s *Service) runLiveSync() {
+	ticker := time.NewTicker(s.config.EpochCheckInterval)
 	defer ticker.Stop()
 
-	currentEpoch := startFrom
-	slog.Info("Live epoch processor starting", "start_epoch", currentEpoch, "interval", s.config.EpochUpdateInterval)
+	slog.Info("Live sync starting")
 
 	for {
+		// Always proceed from the last successfully synced epoch
+		s.cacheMux.RLock()
+		nextEpoch := s.latestSyncEpoch + 1
+		s.cacheMux.RUnlock()
+
+		// Check if we can process nextEpoch (now - 2)
+		chainHead := utils.TimeToEpoch(time.Now())
+		safeHead := uint64(0)
+		if chainHead > 2 {
+			safeHead = chainHead - 2
+		}
+		// sync from cached nextEpoch to safeHead
+		for epoch := nextEpoch; epoch <= safeHead; epoch++ {
+			if err := s.processEpochWithRetry(epoch); err == nil {
+
+			}
+		}
+
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
-			// Only process up to the latest completed epoch (N-1). If current epoch is not yet completed, wait.
-			latest := utils.TimeToEpoch(time.Now())
-			if latest == 0 || currentEpoch > (latest-1) {
-				slog.Info("No completed epoch to process yet", "current_epoch", currentEpoch, "latest_now", latest)
-				continue
-			}
-
-			// Retry processing the epoch on transient failures; only advance when successful.
-			if ok := s.processEpochWithRetry(currentEpoch); ok {
-				currentEpoch++
-			}
 		}
 	}
 }
 
-// backfillToUTCMidnight backfills epochs using a worker pool.
-// Default behavior (StartEpoch == 0): backfill from today's UTC+8 midnight epoch up to the current latest epoch.
-func (s *Service) backfillToUTCMidnight() {
-	startTime := time.Now()
-	midnightEpoch := s.currentMidnightEpoch()
-	from, to, ok := s.backfillRange(midnightEpoch)
-	if !ok {
-		slog.Info("Backfill skipped", "start_epoch", s.config.StartEpoch, "midnight_epoch", midnightEpoch)
-		return
+func (s *Service) processEpochWithRetry(epoch uint64) error {
+	var err error
+	backoff := time.Second
+	maxRetries := s.config.EpochProcessMaxRetries
+	if maxRetries == 0 {
+		maxRetries = 3
 	}
 
-	workerCount := s.workerCount()
-
-	total := to - from + 1
-	slog.Info("Starting backfill", "from_epoch", from, "to_epoch", to, "count", total, "concurrency", workerCount)
-
-	jobs := make(chan uint64, workerCount*16)
-	var wg sync.WaitGroup
-
-	// Workers
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-s.ctx.Done():
-					return
-				case epoch, ok := <-jobs:
-					if !ok {
-						return
-					}
-					_ = s.processEpochWithRetry(epoch)
-				}
-			}
-		}()
-	}
-
-	// Producer
-produce:
-	for epoch := from; epoch <= to; epoch++ {
-		select {
-		case <-s.ctx.Done():
-			break produce
-		case jobs <- epoch:
+	for i := 0; i < maxRetries; i++ {
+		if s.ctx.Err() != nil {
+			return s.ctx.Err()
 		}
+		if err = s.processEpoch(epoch); err == nil {
+			return nil
+		}
+		slog.Warn("Epoch processing failed", "epoch", epoch, "attempt", i+1, "error", err)
+		time.Sleep(backoff)
+		backoff *= 2
 	}
-	close(jobs)
-	wg.Wait()
-
-	if s.ctx.Err() != nil {
-		slog.Info("Backfill cancelled", "from_epoch", from, "to_epoch", to, "duration", time.Since(startTime))
-		return
-	}
-
-	slog.Info("Backfill completed", "from_epoch", from, "to_epoch", to, "duration", time.Since(startTime))
+	return err
 }
 
-// processEpoch fetches rewards for a specific epoch and updates the cache
 func (s *Service) processEpoch(epoch uint64) error {
 	startTime := time.Now()
-	slog.Debug("Processing epoch", "epoch", epoch)
-
-	// Get rewards for the epoch
-	rewardsStart := time.Now()
-	rewards, err := GetRewardsForEpoch(epoch, s.beaconCL, *s.elClient)
-	rewardsDuration := time.Since(rewardsStart)
+	rewards, err := s.getRewardsForEpoch(epoch)
 	if err != nil {
-		slog.Error("Failed to get rewards for epoch", "epoch", epoch, "error", err, "get_rewards_duration", rewardsDuration)
 		return err
 	}
 
-	// Update cache with rewards for all validators (using accumulation)
-	accumulateStart := time.Now()
 	s.cacheMux.Lock()
-
 	for validatorIndex, income := range rewards {
 		s.accumulateRewards(validatorIndex, income)
 	}
@@ -203,27 +257,25 @@ func (s *Service) processEpoch(epoch uint64) error {
 		s.latestSyncEpoch = epoch
 	}
 	s.cacheMux.Unlock()
-	accumulateDuration := time.Since(accumulateStart)
 
-	totalDuration := time.Since(startTime)
-	slog.Info("Updated cache with all validators", "epoch", epoch, "validators", len(rewards), "get_rewards_duration", rewardsDuration, "accumulate_duration", accumulateDuration, "total_duration", totalDuration)
+	slog.Info("Processed epoch", "epoch", epoch, "validators", len(rewards), "duration", time.Since(startTime))
 	return nil
 }
 
-// accumulateRewards adds the new rewards to existing cached rewards
-// Note: This method assumes the caller holds the cacheMux lock
+// ---------------------------------------------------------------------
+// Cache & History
+// ---------------------------------------------------------------------
+
 func (s *Service) accumulateRewards(validatorIndex uint64, income *types.ValidatorEpochIncome) {
 	if income == nil {
 		return
 	}
-
 	existing, exists := s.cache[validatorIndex]
 	if !exists {
 		s.cache[validatorIndex] = income
 		return
 	}
-
-	// Accumulate rewards by adding to existing values
+	// In-place accumulation to avoid copying struct
 	existing.AttestationSourceReward += income.AttestationSourceReward
 	existing.AttestationSourcePenalty += income.AttestationSourcePenalty
 	existing.AttestationTargetReward += income.AttestationTargetReward
@@ -238,537 +290,343 @@ func (s *Service) accumulateRewards(validatorIndex uint64, income *types.Validat
 	existing.SlashingReward += income.SlashingReward
 	existing.SlashingPenalty += income.SlashingPenalty
 	existing.ProposalsMissed += income.ProposalsMissed
-
-	existing.TxFeeRewardWei = utils.AddWei(existing.TxFeeRewardWei, income.TxFeeRewardWei)
+	existing.TxFeeRewardWei = addWei(existing.TxFeeRewardWei, income.TxFeeRewardWei)
 }
 
-// cacheResetTimer periodically clears the cache
 func (s *Service) cacheResetTimer() {
 	ticker := time.NewTicker(s.config.CacheResetInterval)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
-			cleared := s.resetCache()
-			slog.Info("Cache reset completed", "cleared", cleared)
+			s.resetCache()
 		}
 	}
 }
 
-// GetRewards returns cached rewards for the specified validator indices
+func (s *Service) resetCache() {
+	s.cacheMux.Lock()
+	defer s.cacheMux.Unlock()
+
+	if len(s.cache) > 0 {
+		snapshot := s.computeNetworkSnapshotLocked(time.Now())
+		s.persistSnapshot(snapshot)
+	}
+
+	s.cache = make(map[uint64]*types.ValidatorEpochIncome)
+	// NOTE: We do NOT reset latestSyncEpoch here. It serves as the high-water mark for synchronization.
+	// Resetting it would cause the sync routine to restart from startEpoch/0 which is incorrect.
+	s.setCacheWindowStart(time.Now())
+	slog.Info("Cache reset")
+}
+
+// ---------------------------------------------------------------------
+// Data Access (Read)
+// ---------------------------------------------------------------------
+
 func (s *Service) GetRewards(validatorIndices []uint64) map[uint64]*types.ValidatorEpochIncome {
 	s.cacheMux.RLock()
 	defer s.cacheMux.RUnlock()
-
 	result := make(map[uint64]*types.ValidatorEpochIncome)
-
 	for _, index := range validatorIndices {
 		if income, exists := s.cache[index]; exists {
 			result[index] = income
 		}
 	}
-
 	return result
 }
 
-// GetAllRewards returns all cached rewards
-func (s *Service) GetAllRewards() map[uint64]*types.ValidatorEpochIncome {
-	s.cacheMux.RLock()
-	defer s.cacheMux.RUnlock()
-
-	result := make(map[uint64]*types.ValidatorEpochIncome)
-	for k, v := range s.cache {
-		result[k] = v
-	}
-
-	return result
-}
-
-// TotalNetworkRewards sums CL/EL rewards for every cached validator and derives APR for the window.
 func (s *Service) TotalNetworkRewards() *NetworkRewardSnapshot {
 	s.cacheMux.RLock()
 	defer s.cacheMux.RUnlock()
 	return s.computeNetworkSnapshotLocked(time.Now())
 }
 
-// RewardHistory returns all persisted daily snapshots.
 func (s *Service) RewardHistory() ([]NetworkRewardSnapshot, error) {
-	if s.history == nil {
+	if s.historyPath == "" {
+		return nil, nil
+	}
+	s.historyMu.Lock()
+	defer s.historyMu.Unlock()
+
+	f, err := os.Open(s.historyPath)
+	if os.IsNotExist(err) {
 		return []NetworkRewardSnapshot{}, nil
 	}
-	return s.history.ReadAll()
-}
-
-func (s *Service) computeNetworkSnapshotLocked(now time.Time) *NetworkRewardSnapshot {
-	windowStart, windowEnd := s.GetRewardWindow()
-
-	snapshot := &NetworkRewardSnapshot{
-		WindowStart: windowStart,
-		WindowEnd:   windowEnd,
-	}
-	duration := snapshot.WindowEnd.Sub(snapshot.WindowStart)
-	if duration <= 0 {
-		duration = s.config.CacheResetInterval
-		snapshot.WindowStart = snapshot.WindowEnd.Add(-duration)
-	}
-	snapshot.WindowDurationSeconds = duration.Seconds()
-
-	var clRewardsTotal int64
-	elRewardsWei := big.NewInt(0)
-	for _, income := range s.cache {
-		if income == nil {
-			continue
-		}
-		clRewardsTotal += income.TotalClRewards()
-		elRewardsWei.Add(elRewardsWei, utils.WeiBytesToBigInt(income.TxFeeRewardWei))
-	}
-	elRewardsGwei := new(big.Int).Div(elRewardsWei, gweiScalar).Int64()
-	snapshot.ActiveValidatorCount = len(s.cache)
-	if activeCount, err := s.countActiveValidators(now); err != nil {
-		slog.Error("Failed to count active validators", "error", err)
-	} else if activeCount > 0 {
-		snapshot.ActiveValidatorCount = int(activeCount)
-	}
-	snapshot.ClRewardsGwei = clRewardsTotal
-	snapshot.ElRewardsGwei = elRewardsGwei
-	snapshot.TotalRewardsGwei = clRewardsTotal + elRewardsGwei
-
-	totalEffective, err := s.totalEffectiveBalance(now)
 	if err != nil {
-		slog.Error("Failed to sum effective balances from Dora", "error", err)
+		return nil, err
 	}
-	if totalEffective == 0 {
-		totalEffective = int64(len(s.cache)) * defaultEffectiveBalanceGwei
-	}
-	snapshot.TotalEffectiveBalanceGwei = totalEffective
+	defer f.Close()
 
-	if snapshot.TotalEffectiveBalanceGwei > 0 && snapshot.WindowDurationSeconds > 0 {
-		apr := float64(snapshot.TotalRewardsGwei) / float64(snapshot.TotalEffectiveBalanceGwei)
-		apr *= s.config.CacheResetInterval.Seconds() / snapshot.WindowDurationSeconds
-		apr *= 100.0 * 365.0
-		snapshot.ProjectAprPercent = apr
+	var entries []NetworkRewardSnapshot
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if b := bytes.TrimSpace(scanner.Bytes()); len(b) > 0 {
+			var e NetworkRewardSnapshot
+			_ = json.Unmarshal(b, &e)
+			entries = append(entries, e)
+		}
 	}
-
-	return snapshot
+	return entries, nil
 }
 
-func (s *Service) countActiveValidators(now time.Time) (int64, error) {
-	if s.doraDB == nil {
-		return 0, nil
-	}
-	epoch := utils.TimeToEpoch(now)
-	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
-	defer cancel()
-	return s.doraDB.ActiveValidatorCount(ctx, epoch)
-}
-
-func (s *Service) totalEffectiveBalance(now time.Time) (int64, error) {
-	if s.doraDB == nil {
-		return 0, nil
-	}
-	epoch := utils.TimeToEpoch(now)
-	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
-	defer cancel()
-	return s.doraDB.TotalEffectiveBalance(ctx, epoch)
-}
-
-// ValidatorReward represents the total reward (EL + CL) for a single validator.
-type ValidatorReward struct {
-	ValidatorIndex       uint64  `json:"validator_index"`
-	ClRewardsGwei        int64   `json:"cl_rewards_gwei"`
-	ElRewardsGwei        int64   `json:"el_rewards_gwei"`
-	TotalRewardsGwei     int64   `json:"total_rewards_gwei"`
-	EffectiveBalanceGwei int64   `json:"effective_balance_gwei"`
-	APR1D                float64 `json:"1d_apr"`
-}
-
-// GetRewardWindow returns the current reward accumulation window.
-func (s *Service) GetRewardWindow() (time.Time, time.Time) {
-	s.cacheMux.RLock()
-	latest := s.latestSyncEpoch
-	s.cacheMux.RUnlock()
-
-	start := s.cacheWindowStartTime().UTC()
-	end := utils.EpochToTime(latest)
-
-	if end.Before(start) {
-		return start, start
-	}
-	return start, end
-}
-
-// GetTotalRewards returns the sum of EL+CL rewards for each validator and derives simple APY estimates.
 func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances map[uint64]int64) map[uint64]*ValidatorReward {
 	s.cacheMux.RLock()
 	defer s.cacheMux.RUnlock()
 
 	start, end := s.GetRewardWindow()
-	durationSeconds := end.Sub(start).Seconds()
+	duration := end.Sub(start).Seconds()
+	if duration <= 0 {
+		duration = s.config.CacheResetInterval.Seconds()
+	}
 
 	result := make(map[uint64]*ValidatorReward, len(validatorIndices))
-
 	for _, index := range validatorIndices {
 		income, exists := s.cache[index]
 		if !exists {
 			continue
 		}
 
-		reward := &ValidatorReward{ValidatorIndex: index}
-		reward.ClRewardsGwei = income.TotalClRewards()
+		cl := income.TotalClRewards()
+		elWei := weiBytesToBigInt(income.TxFeeRewardWei)
+		elGwei := new(big.Int).Div(elWei, gweiScalar).Int64()
 
-		elRewardsWei := utils.WeiBytesToBigInt(income.TxFeeRewardWei)
-		reward.ElRewardsGwei = new(big.Int).Div(new(big.Int).Set(elRewardsWei), gweiScalar).Int64()
+		// Calc Total
+		totalGwei := cl + elGwei
+		bal := effectiveBalances[index]
 
-		clRewardsWei := new(big.Int).Mul(big.NewInt(reward.ClRewardsGwei), gweiScalar)
-		totalRewardsWei := new(big.Int).Add(clRewardsWei, elRewardsWei)
-		reward.TotalRewardsGwei = new(big.Int).Div(totalRewardsWei, gweiScalar).Int64()
-		reward.EffectiveBalanceGwei = effectiveBalances[index]
-		if durationSeconds <= 0 {
-			durationSeconds = s.config.CacheResetInterval.Seconds()
-		}
-		if reward.EffectiveBalanceGwei > 0 && durationSeconds > 0 {
-			reward.APR1D = float64(reward.TotalRewardsGwei) / float64(reward.EffectiveBalanceGwei)
-			reward.APR1D *= s.config.CacheResetInterval.Seconds() / durationSeconds
-			reward.APR1D *= 100.0 * 365.0
+		r := &ValidatorReward{
+			ValidatorIndex:       index,
+			ClRewardsGwei:        cl,
+			ElRewardsGwei:        elGwei,
+			TotalRewardsGwei:     totalGwei,
+			EffectiveBalanceGwei: bal,
 		}
 
-		result[index] = reward
+		if bal > 0 && duration > 0 {
+			apr := float64(totalGwei) / float64(bal)
+			apr *= s.config.CacheResetInterval.Seconds() / duration
+			apr *= 100.0 * 365.0
+			r.APR1D = apr
+		}
+		result[index] = r
 	}
-
 	return result
 }
 
-func (s *Service) currentMidnightEpoch() uint64 {
-	midnight := s.midnightUTC8(time.Now())
-	return utils.TimeToEpoch(midnight)
-}
+func (s *Service) GetRewardWindow() (time.Time, time.Time) {
 
-func (s *Service) midnightUTC8(t time.Time) time.Time {
-	loc := time.FixedZone("UTC+8", 8*60*60)
-	local := t.In(loc)
-	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
-}
-
-func (s *Service) setCacheWindowStart(ts time.Time) {
-	if ts.IsZero() {
-		ts = time.Now()
+	s.cacheMux.RLock()
+	latestEpoch := s.latestSyncEpoch
+	s.cacheMux.RUnlock()
+	start := s.cacheWindowStartTime().UTC()
+	end := utils.EpochToTime(latestEpoch)
+	if end.Before(start) {
+		return start, start
 	}
+	return start, end
+}
+
+func (s *Service) computeNetworkSnapshotLocked(now time.Time) *NetworkRewardSnapshot {
+	start, end := s.GetRewardWindow()
+	duration := end.Sub(start)
+	if duration <= 0 {
+		duration = s.config.CacheResetInterval
+		start = end.Add(-duration)
+	}
+
+	var clTotal int64
+	elWei := big.NewInt(0)
+	for _, inc := range s.cache {
+		clTotal += inc.TotalClRewards()
+		elWei.Add(elWei, weiBytesToBigInt(inc.TxFeeRewardWei))
+	}
+	elTotal := new(big.Int).Div(elWei, gweiScalar).Int64()
+
+	snap := &NetworkRewardSnapshot{
+		WindowStart:           start,
+		WindowEnd:             end,
+		WindowDurationSeconds: duration.Seconds(),
+		ActiveValidatorCount:  len(s.cache),
+		ClRewardsGwei:         clTotal,
+		ElRewardsGwei:         elTotal,
+		TotalRewardsGwei:      clTotal + elTotal,
+	}
+
+	// Effective balance
+	if s.doraDB != nil {
+		// This db call can take time, potentially blocking the lock?
+		// Ideally we shouldn't hold lock over DB calls.
+		// But for simplicity in this refactor we keep it, as this only happens on cache reset/stats.
+		ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
+		if count, err := s.doraDB.ActiveValidatorCount(ctx, utils.TimeToEpoch(now)); err == nil && count > 0 {
+			snap.ActiveValidatorCount = int(count)
+		}
+		if eff, err := s.doraDB.TotalEffectiveBalance(ctx, utils.TimeToEpoch(now)); err == nil {
+			snap.TotalEffectiveBalanceGwei = eff
+		}
+		cancel()
+	}
+
+	if snap.TotalEffectiveBalanceGwei == 0 {
+		snap.TotalEffectiveBalanceGwei = int64(len(s.cache)) * defaultEffectiveBalanceGwei
+	}
+
+	if snap.TotalEffectiveBalanceGwei > 0 && snap.WindowDurationSeconds > 0 {
+		apr := float64(snap.TotalRewardsGwei) / float64(snap.TotalEffectiveBalanceGwei)
+		apr *= s.config.CacheResetInterval.Seconds() / snap.WindowDurationSeconds
+		apr *= 100.0 * 365.0
+		snap.ProjectAprPercent = apr
+	}
+
+	return snap
+}
+
+// getRewardsForEpoch fetches rewards (Beacon + EL)
+func (s *Service) getRewardsForEpoch(epoch uint64) (map[uint64]*types.ValidatorEpochIncome, error) {
+	assigns, err := s.beaconCL.ProposerAssignments(epoch)
+	if err != nil {
+		return nil, err
+	}
+
+	proposers := make(map[uint64]uint64, len(assigns.Data))
+	for _, pa := range assigns.Data {
+		proposers[uint64(pa.Slot)] = uint64(pa.ValidatorIndex)
+	}
+
+	rewards := make(map[uint64]*types.ValidatorEpochIncome)
+	var mu sync.Mutex
+
+	g, _ := errgroup.WithContext(s.ctx)
+
+	// Fetch Slot Rewards (EL, Sync, Block)
+	slots := uint64(len(assigns.Data))
+	startSlot := epoch * slots
+	for i := uint64(0); i < slots; i++ {
+		slot := startSlot + i
+		g.Go(func() error {
+			return s.processSlot(slot, proposers, rewards, &mu)
+		})
+	}
+
+	// Fetch Attestations
+	g.Go(func() error {
+		ar, err := s.beaconCL.AttestationRewards(epoch)
+		if err != nil {
+			return err
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		for _, r := range ar.Data.TotalRewards {
+			e := s.getEntry(rewards, r.ValidatorIndex)
+			e.AttestationHeadReward = uint64(r.Head)
+			e.AttestationSourceReward = uint64(r.Source)
+			e.AttestationTargetReward = uint64(r.Target)
+		}
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return rewards, nil
+}
+
+func (s *Service) processSlot(slot uint64, proposers map[uint64]uint64, rewards map[uint64]*types.ValidatorEpochIncome, mu *sync.Mutex) error {
+	proposer, ok := proposers[slot]
+	if !ok {
+		return fmt.Errorf("no proposer for slot %d", slot)
+	}
+
+	// EL Rewards
+	blkNum, err := s.beaconCL.ExecutionBlockNumber(slot)
+	if err == nil {
+		if el, err := elrewards.GetELRewardForBlock(blkNum, *s.elClient); err == nil {
+			mu.Lock()
+			s.getEntry(rewards, proposer).TxFeeRewardWei = el.Bytes()
+			mu.Unlock()
+		}
+	} else if err == types.ErrBlockNotFound {
+		mu.Lock()
+		s.getEntry(rewards, proposer).ProposalsMissed++
+		mu.Unlock()
+	}
+
+	// Sync Committee
+	if syncRew, err := s.beaconCL.SyncCommitteeRewards(slot); err == nil && syncRew != nil {
+		mu.Lock()
+		for _, r := range syncRew.Data {
+			e := s.getEntry(rewards, r.ValidatorIndex)
+			if r.Reward > 0 {
+				e.SyncCommitteeReward += uint64(r.Reward)
+			} else {
+				e.SyncCommitteePenalty += uint64(-r.Reward)
+			}
+		}
+		mu.Unlock()
+	}
+
+	// Block Inclusion
+	if blkRew, err := s.beaconCL.BlockRewards(slot); err == nil {
+		mu.Lock()
+		e := s.getEntry(rewards, blkRew.Data.ProposerIndex)
+		e.ProposerAttestationInclusionReward += blkRew.Data.Attestations
+		e.ProposerSlashingInclusionReward += blkRew.Data.AttesterSlashings + blkRew.Data.ProposerSlashings
+		e.ProposerSyncInclusionReward += blkRew.Data.SyncAggregate
+		mu.Unlock()
+	}
+
+	return nil
+}
+
+func (s *Service) getEntry(m map[uint64]*types.ValidatorEpochIncome, idx uint64) *types.ValidatorEpochIncome {
+	if m[idx] == nil {
+		m[idx] = &types.ValidatorEpochIncome{}
+	}
+	return m[idx]
+}
+
+func (s *Service) persistSnapshot(snap *NetworkRewardSnapshot) {
+	if s.historyPath == "" || snap == nil {
+		return
+	}
+	s.historyMu.Lock()
+	defer s.historyMu.Unlock()
+	_ = os.MkdirAll(filepath.Dir(s.historyPath), 0o755)
+	f, err := os.OpenFile(s.historyPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err == nil {
+		_ = json.NewEncoder(f).Encode(snap)
+		f.Close()
+	}
+}
+
+func (s *Service) setCacheWindowStart(t time.Time) {
 	s.cacheWindowMu.Lock()
-	s.cacheWindowStart = ts
+	s.cacheWindowStart = t
 	s.cacheWindowMu.Unlock()
 }
 
 func (s *Service) cacheWindowStartTime() time.Time {
 	s.cacheWindowMu.RLock()
-	start := s.cacheWindowStart
-	s.cacheWindowMu.RUnlock()
-	if start.IsZero() {
+	defer s.cacheWindowMu.RUnlock()
+	if s.cacheWindowStart.IsZero() {
 		return time.Now().Add(-s.config.CacheResetInterval)
 	}
-	return start
+	return s.cacheWindowStart
 }
 
-func (s *Service) determineLiveStartEpoch(midnightEpoch uint64) uint64 {
-	switch {
-	case s.config.StartEpoch == 0:
-		// Start live processing from the next epoch after the latest completed epoch
-		latest := utils.TimeToEpoch(time.Now())
-		if latest == 0 {
-			return 0
-		}
-		return (latest - 1) + 1 // i.e., latest
-	case s.config.StartEpoch <= midnightEpoch:
-		return midnightEpoch + 1
-	default:
-		return s.config.StartEpoch + 1
+func addWei(a, b []byte) []byte {
+	if len(b) == 0 {
+		return a
 	}
+	return new(big.Int).Add(new(big.Int).SetBytes(a), new(big.Int).SetBytes(b)).Bytes()
 }
 
-func (s *Service) backfillRange(midnightEpoch uint64) (uint64, uint64, bool) {
-	start := s.config.StartEpoch
-	if start == 0 {
-		// Default: backfill from midnight to the current latest epoch
-		latest := utils.TimeToEpoch(time.Now())
-		// Only backfill up to the latest completed epoch (N-1)
-		if latest == 0 {
-			return 0, 0, false
-		}
-		latest = latest - 1
-		if midnightEpoch > latest {
-			return 0, 0, false
-		}
-		return midnightEpoch, latest, true
+func weiBytesToBigInt(b []byte) *big.Int {
+	if len(b) == 0 {
+		return big.NewInt(0)
 	}
-
-	if start <= midnightEpoch {
-		return start, midnightEpoch, start <= midnightEpoch
-	}
-
-	from := midnightEpoch + 1
-	if from > start {
-		return 0, 0, false
-	}
-
-	return from, start, true
-}
-
-func (s *Service) workerCount() int {
-	if s.config.BackfillConcurrency <= 0 {
-		return 1
-	}
-	return s.config.BackfillConcurrency
-}
-
-func (s *Service) resetCache() int {
-	s.cacheMux.Lock()
-	size := len(s.cache)
-	var snapshot *NetworkRewardSnapshot
-	if size > 0 {
-		snapshot = s.computeNetworkSnapshotLocked(time.Now())
-	}
-	s.cache = make(map[uint64]*types.ValidatorEpochIncome)
-	s.latestSyncEpoch = 0
-	s.cacheMux.Unlock()
-
-	if size > 0 {
-		s.persistSnapshot(snapshot)
-	}
-	s.setCacheWindowStart(time.Now())
-	return size
-}
-
-func (s *Service) persistSnapshot(snapshot *NetworkRewardSnapshot) {
-	if snapshot == nil || s.history == nil {
-		return
-	}
-	if err := s.history.Append(snapshot); err != nil {
-		slog.Error("Failed to persist reward snapshot", "error", err, "path", s.history.Path())
-	}
-}
-
-// processEpochWithRetry wraps processEpoch with a simple bounded backoff retry.
-func (s *Service) processEpochWithRetry(epoch uint64) bool {
-	maxRetries := s.config.EpochProcessMaxRetries
-	if maxRetries <= 0 {
-		maxRetries = 5
-	}
-	baseBackoff := s.config.EpochProcessBaseBackoff
-	if baseBackoff <= 0 {
-		baseBackoff = 2 * time.Second
-	}
-	maxBackoff := s.config.EpochProcessMaxBackoff
-	if maxBackoff <= 0 {
-		maxBackoff = 30 * time.Second
-	}
-
-	backoff := baseBackoff
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if s.ctx.Err() != nil {
-			return false
-		}
-		err := s.processEpoch(epoch)
-		if err == nil {
-			return true
-		}
-		slog.Warn("Retrying epoch processing", "epoch", epoch, "attempt", attempt, "max_attempts", maxRetries, "backoff", backoff, "error", err)
-		select {
-		case <-s.ctx.Done():
-			return false
-		case <-time.After(backoff):
-		}
-		// Exponential backoff with cap
-		backoff = backoff * 2
-		if backoff > maxBackoff {
-			backoff = maxBackoff
-		}
-	}
-	slog.Error("Exhausted retries for epoch", "epoch", epoch, "attempts", maxRetries)
-	return false
-}
-
-// GetRewardsForEpoch fetches rewards for a specific epoch from the beacon chain and execution layer
-func GetRewardsForEpoch(epoch uint64, client *beacon.Client, elEndpoint string) (map[uint64]*types.ValidatorEpochIncome, error) {
-	proposerAssignments, err := client.ProposerAssignments(epoch)
-	if err != nil {
-		return nil, err
-	}
-
-	slotsPerEpoch := uint64(len(proposerAssignments.Data))
-
-	startSlot := epoch * slotsPerEpoch
-	endSlot := startSlot + slotsPerEpoch - 1
-
-	g := new(errgroup.Group)
-	// g.SetLimit(32)
-
-	slotsToProposerIndex := make(map[uint64]uint64)
-	for _, pa := range proposerAssignments.Data {
-		slotsToProposerIndex[uint64(pa.Slot)] = uint64(pa.ValidatorIndex)
-	}
-
-	rewardsMux := &sync.Mutex{}
-
-	rewards := make(map[uint64]*types.ValidatorEpochIncome)
-
-	for i := startSlot; i <= endSlot; i++ {
-		i := i
-
-		g.Go(func() error {
-			proposer, found := slotsToProposerIndex[i]
-			if !found {
-				return fmt.Errorf("assigned proposer for slot %v not found", i)
-			}
-
-			// Run per-slot RPCs in parallel:
-			// 1) Execution block number (+ ELRewardForBlock if exists)
-			// 2) SyncCommitteeRewards
-			// 3) BlockRewards
-			slotGroup := new(errgroup.Group)
-
-			// 1) Execution Layer path
-			slotGroup.Go(func() error {
-				execStart := time.Now()
-				execBlockNumber, err := client.ExecutionBlockNumber(i)
-				slog.Debug("Fetched ExecutionBlockNumber", "slot", i, "duration", time.Since(execStart))
-
-				// Ensure proposer entry exists (needed for missed proposal increment below)
-				rewardsMux.Lock()
-				if rewards[proposer] == nil {
-					rewards[proposer] = &types.ValidatorEpochIncome{}
-				}
-				rewardsMux.Unlock()
-
-				if err != nil {
-					if err == types.ErrBlockNotFound {
-						rewardsMux.Lock()
-						rewards[proposer].ProposalsMissed += 1
-						rewardsMux.Unlock()
-						return nil
-					} else if err != types.ErrSlotPreMerge { // ignore pre-merge
-						logrus.Errorf("error retrieving execution block number for slot %v: %v", i, err)
-						return err
-					}
-					return nil
-				}
-
-				txFeeIncomeStart := time.Now()
-				txFeeIncome, err := elrewards.GetELRewardForBlock(execBlockNumber, elEndpoint)
-				slog.Debug("Fetched ELRewardForBlock", "slot", i, "duration", time.Since(txFeeIncomeStart))
-				if err != nil {
-					return err
-				}
-
-				rewardsMux.Lock()
-				// proposer entry already ensured above
-				rewards[proposer].TxFeeRewardWei = txFeeIncome.Bytes()
-				rewardsMux.Unlock()
-				return nil
-			})
-
-			// 2) SyncCommitteeRewards
-			slotGroup.Go(func() error {
-				syncRewardsStart := time.Now()
-				syncRewards, err := client.SyncCommitteeRewards(i)
-				slog.Debug("Fetched SyncCommitteeRewards", "slot", i, "duration", time.Since(syncRewardsStart))
-				if err != nil {
-					if err != types.ErrSlotPreSyncCommittees {
-						return err
-					}
-					return nil
-				}
-
-				if syncRewards != nil {
-					rewardsMux.Lock()
-					for _, sr := range syncRewards.Data {
-						if rewards[sr.ValidatorIndex] == nil {
-							rewards[sr.ValidatorIndex] = &types.ValidatorEpochIncome{}
-						}
-
-						if sr.Reward > 0 {
-							rewards[sr.ValidatorIndex].SyncCommitteeReward += uint64(sr.Reward)
-						} else {
-							rewards[sr.ValidatorIndex].SyncCommitteePenalty += uint64(sr.Reward * -1)
-						}
-					}
-					rewardsMux.Unlock()
-				}
-				return nil
-			})
-
-			// 3) BlockRewards
-			slotGroup.Go(func() error {
-				blockRewardsStart := time.Now()
-				blockRewards, err := client.BlockRewards(i)
-				slog.Debug("Fetched BlockRewards", "slot", i, "duration", time.Since(blockRewardsStart))
-				if err != nil {
-					return err
-				}
-
-				rewardsMux.Lock()
-				if rewards[blockRewards.Data.ProposerIndex] == nil {
-					rewards[blockRewards.Data.ProposerIndex] = &types.ValidatorEpochIncome{}
-				}
-				rewards[blockRewards.Data.ProposerIndex].ProposerAttestationInclusionReward += blockRewards.Data.Attestations
-				rewards[blockRewards.Data.ProposerIndex].ProposerSlashingInclusionReward += blockRewards.Data.AttesterSlashings + blockRewards.Data.ProposerSlashings
-				rewards[blockRewards.Data.ProposerIndex].ProposerSyncInclusionReward += blockRewards.Data.SyncAggregate
-				rewardsMux.Unlock()
-				return nil
-			})
-
-			// Wait for all per-slot calls
-			return slotGroup.Wait()
-		})
-	}
-
-	g.Go(func() error {
-		attestationRewardsStart := time.Now()
-		ar, err := client.AttestationRewards(epoch)
-		slog.Debug("Fetched AttestationRewards", "epoch", epoch, "duration", time.Since(attestationRewardsStart))
-		if err != nil {
-			return err
-		}
-		rewardsMux.Lock()
-		defer rewardsMux.Unlock()
-		for _, ar := range ar.Data.TotalRewards {
-			if rewards[ar.ValidatorIndex] == nil {
-				rewards[ar.ValidatorIndex] = &types.ValidatorEpochIncome{}
-			}
-
-			if ar.Head >= 0 {
-				rewards[ar.ValidatorIndex].AttestationHeadReward = uint64(ar.Head)
-			} else {
-				return fmt.Errorf("retrieved negative attestation head reward for validator %v: %v", ar.ValidatorIndex, ar.Head)
-			}
-
-			if ar.Source > 0 {
-				rewards[ar.ValidatorIndex].AttestationSourceReward = uint64(ar.Source)
-			} else {
-				rewards[ar.ValidatorIndex].AttestationSourcePenalty = uint64(ar.Source * -1)
-			}
-
-			if ar.Target > 0 {
-				rewards[ar.ValidatorIndex].AttestationTargetReward = uint64(ar.Target)
-			} else {
-				rewards[ar.ValidatorIndex].AttestationTargetPenalty = uint64(ar.Target * -1)
-			}
-
-			if ar.InclusionDelay <= 0 {
-				rewards[ar.ValidatorIndex].FinalityDelayPenalty = uint64(ar.InclusionDelay * -1)
-			} else {
-				return fmt.Errorf("retrieved positive inclusion delay penalty for validator %v: %v", ar.ValidatorIndex, ar.InclusionDelay)
-			}
-		}
-
-		return nil
-	})
-
-	err = g.Wait()
-	if err != nil {
-		return nil, err
-	}
-
-	return rewards, nil
+	return new(big.Int).SetBytes(b)
 }

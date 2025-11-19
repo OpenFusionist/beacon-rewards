@@ -108,7 +108,7 @@ func logConfig(cfg *config.Config) {
 		"beacon_node", cfg.BeaconNodeURL,
 		"execution_node", cfg.ExecutionNodeURL,
 		"cache_reset_interval", cfg.CacheResetInterval,
-		"epoch_update_interval", cfg.EpochUpdateInterval,
+		"epoch_check_interval", cfg.EpochCheckInterval,
 		"backfill_concurrency", cfg.BackfillConcurrency,
 		"start_epoch", cfg.StartEpoch,
 		"request_timeout", cfg.RequestTimeout,

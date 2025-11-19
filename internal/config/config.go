@@ -28,7 +28,7 @@ type Config struct {
 	RewardsHistoryFile string
 
 	// Epoch processing configuration.
-	EpochUpdateInterval     time.Duration
+	EpochCheckInterval      time.Duration
 	StartEpoch              uint64
 	EpochProcessMaxRetries  int
 	EpochProcessBaseBackoff time.Duration
@@ -51,7 +51,7 @@ func DefaultConfig() *Config {
 		ExecutionNodeURL:        "http://localhost:8545",
 		CacheResetInterval:      24 * time.Hour,
 		RewardsHistoryFile:      "data/reward_history.jsonl",
-		EpochUpdateInterval:     384 * time.Second, // ~32 slots
+		EpochCheckInterval:      12 * time.Second,
 		StartEpoch:              0,
 		EpochProcessMaxRetries:  5,
 		EpochProcessBaseBackoff: 2 * time.Second,
@@ -116,12 +116,12 @@ func LoadFromEnv(lookup func(string) string) (*Config, error) {
 	if v := lookup("REWARDS_HISTORY_FILE"); v != "" {
 		cfg.RewardsHistoryFile = v
 	}
-	if v := lookup("EPOCH_UPDATE_INTERVAL"); v != "" {
+	if v := lookup("EPOCH_CHECK_INTERVAL"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			return nil, fmt.Errorf("EPOCH_UPDATE_INTERVAL: %w", err)
+			return nil, fmt.Errorf("EPOCH_CHECK_INTERVAL: %w", err)
 		}
-		cfg.EpochUpdateInterval = d
+		cfg.EpochCheckInterval = d
 	}
 	if v := lookup("START_EPOCH"); v != "" {
 		n, err := strconv.ParseUint(v, 10, 64)

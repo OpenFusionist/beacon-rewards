@@ -60,7 +60,7 @@ The service can be configured using environment variables:
 | `EXECUTION_NODE_URL` | Execution layer node URL | `http://localhost:8545` |
 | `DORA_PG_URL` | Dora Postgres URL (DSN) | `postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable` |
 | `START_EPOCH` | Epoch to backfill from (0 disables backfill) | `0` |
-| `EPOCH_UPDATE_INTERVAL` | Interval between live epoch refreshes | `12s` |
+| `EPOCH_CHECK_INTERVAL` | Interval between live epoch check | `12s` |
 | `BACKFILL_CONCURRENCY` | Number of workers for epoch backfill | `16` |
 | `CACHE_RESET_INTERVAL` | How often the in-memory cache is cleared | `24h` |
 
