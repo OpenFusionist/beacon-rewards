@@ -104,7 +104,6 @@ func logConfig(cfg *config.Config) {
 	slog.Info(
 		"Configuration loaded",
 		"listen_address", cfg.ListenAddress(),
-		"dora_pg_url", cfg.DoraPGURL,
 		"beacon_node", cfg.BeaconNodeURL,
 		"execution_node", cfg.ExecutionNodeURL,
 		"cache_reset_interval", cfg.CacheResetInterval,

@@ -293,13 +293,21 @@ func (s *Service) accumulateRewards(validatorIndex uint64, income *types.Validat
 }
 
 func (s *Service) cacheResetTimer() {
-	ticker := time.NewTicker(s.config.CacheResetInterval)
-	defer ticker.Stop()
+	loc := time.FixedZone("UTC+8", 8*60*60)
 	for {
+		now := time.Now().In(loc)
+		// Calculate next 00:00 UTC+8
+		nextRun := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, loc)
+		duration := nextRun.Sub(now)
+
+		slog.Info("Scheduled next cache reset", "next_run", nextRun, "wait_duration", duration)
+
+		timer := time.NewTimer(duration)
 		select {
 		case <-s.ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			s.resetCache()
 		}
 	}
@@ -316,7 +324,6 @@ func (s *Service) resetCache() {
 
 	s.cache = make(map[uint64]*types.ValidatorEpochIncome)
 	// NOTE: We do NOT reset latestSyncEpoch here. It serves as the high-water mark for synchronization.
-	// Resetting it would cause the sync routine to restart from startEpoch/0 which is incorrect.
 	s.setCacheWindowStart(time.Now())
 	slog.Info("Cache reset")
 }
