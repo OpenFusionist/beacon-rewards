@@ -35,6 +35,7 @@ type Service struct {
 	elClient         *string
 	cache            map[uint64]*types.ValidatorEpochIncome
 	cacheMux         sync.RWMutex
+	latestSyncEpoch  uint64
 	history          *HistoryStore
 	cacheWindowStart time.Time
 	cacheWindowMu    sync.RWMutex
@@ -109,7 +110,7 @@ func (s *Service) epochProcessor(startFrom uint64) {
 			return
 		case <-ticker.C:
 			// Only process up to the latest completed epoch (N-1). If current epoch is not yet completed, wait.
-			latest := s.GetCurrentEpoch(time.Now())
+			latest := s.TimeToEpoch(time.Now())
 			if latest == 0 || currentEpoch > (latest-1) {
 				slog.Info("No completed epoch to process yet", "current_epoch", currentEpoch, "latest_now", latest)
 				continue
@@ -201,6 +202,9 @@ func (s *Service) processEpoch(epoch uint64) error {
 
 	for validatorIndex, income := range rewards {
 		s.accumulateRewards(validatorIndex, income)
+	}
+	if epoch > s.latestSyncEpoch {
+		s.latestSyncEpoch = epoch
 	}
 	s.cacheMux.Unlock()
 	accumulateDuration := time.Since(accumulateStart)
@@ -303,9 +307,11 @@ func (s *Service) RewardHistory() ([]NetworkRewardSnapshot, error) {
 }
 
 func (s *Service) computeNetworkSnapshotLocked(now time.Time) *NetworkRewardSnapshot {
+	windowStart, windowEnd := s.GetRewardWindow()
+
 	snapshot := &NetworkRewardSnapshot{
-		WindowStart: s.cacheWindowStartTime().UTC(),
-		WindowEnd:   now.UTC(),
+		WindowStart: windowStart,
+		WindowEnd:   windowEnd,
 	}
 	duration := snapshot.WindowEnd.Sub(snapshot.WindowStart)
 	if duration <= 0 {
@@ -357,7 +363,7 @@ func (s *Service) countActiveValidators(now time.Time) (int64, error) {
 	if s.doraDB == nil {
 		return 0, nil
 	}
-	epoch := s.GetCurrentEpoch(now)
+	epoch := s.TimeToEpoch(now)
 	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
 	defer cancel()
 	return s.doraDB.ActiveValidatorCount(ctx, epoch)
@@ -367,7 +373,7 @@ func (s *Service) totalEffectiveBalance(now time.Time) (int64, error) {
 	if s.doraDB == nil {
 		return 0, nil
 	}
-	epoch := s.GetCurrentEpoch(now)
+	epoch := s.TimeToEpoch(now)
 	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
 	defer cancel()
 	return s.doraDB.TotalEffectiveBalance(ctx, epoch)
@@ -385,13 +391,26 @@ type ValidatorReward struct {
 
 // GetRewardWindow returns the current reward accumulation window.
 func (s *Service) GetRewardWindow() (time.Time, time.Time) {
-	return s.cacheWindowStartTime().UTC(), time.Now().UTC()
+	s.cacheMux.RLock()
+	latest := s.latestSyncEpoch
+	s.cacheMux.RUnlock()
+
+	start := s.cacheWindowStartTime().UTC()
+	end := s.EpochToTime(latest)
+
+	if end.Before(start) {
+		return start, start
+	}
+	return start, end
 }
 
 // GetTotalRewards returns the sum of EL+CL rewards for each validator and derives simple APY estimates.
 func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances map[uint64]int64) map[uint64]*ValidatorReward {
 	s.cacheMux.RLock()
 	defer s.cacheMux.RUnlock()
+
+	start, end := s.GetRewardWindow()
+	durationSeconds := end.Sub(start).Seconds()
 
 	result := make(map[uint64]*ValidatorReward, len(validatorIndices))
 
@@ -411,7 +430,6 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances m
 		totalRewardsWei := new(big.Int).Add(clRewardsWei, elRewardsWei)
 		reward.TotalRewardsGwei = new(big.Int).Div(totalRewardsWei, gweiScalar).Int64()
 		reward.EffectiveBalanceGwei = effectiveBalances[index]
-		durationSeconds := time.Since(s.cacheWindowStartTime()).Seconds()
 		if durationSeconds <= 0 {
 			durationSeconds = s.config.CacheResetInterval.Seconds()
 		}
@@ -429,7 +447,7 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances m
 
 func (s *Service) currentMidnightEpoch() uint64 {
 	midnight := s.midnightUTC8(time.Now())
-	return s.GetCurrentEpoch(midnight)
+	return s.TimeToEpoch(midnight)
 }
 
 func (s *Service) midnightUTC8(t time.Time) time.Time {
@@ -461,7 +479,7 @@ func (s *Service) determineLiveStartEpoch(midnightEpoch uint64) uint64 {
 	switch {
 	case s.config.StartEpoch == 0:
 		// Start live processing from the next epoch after the latest completed epoch
-		latest := s.GetCurrentEpoch(time.Now())
+		latest := s.TimeToEpoch(time.Now())
 		if latest == 0 {
 			return 0
 		}
@@ -477,7 +495,7 @@ func (s *Service) backfillRange(midnightEpoch uint64) (uint64, uint64, bool) {
 	start := s.config.StartEpoch
 	if start == 0 {
 		// Default: backfill from midnight to the current latest epoch
-		latest := s.GetCurrentEpoch(time.Now())
+		latest := s.TimeToEpoch(time.Now())
 		// Only backfill up to the latest completed epoch (N-1)
 		if latest == 0 {
 			return 0, 0, false
@@ -516,6 +534,7 @@ func (s *Service) resetCache() int {
 		snapshot = s.computeNetworkSnapshotLocked(time.Now())
 	}
 	s.cache = make(map[uint64]*types.ValidatorEpochIncome)
+	s.latestSyncEpoch = 0
 	s.cacheMux.Unlock()
 
 	if size > 0 {
@@ -534,13 +553,18 @@ func (s *Service) persistSnapshot(snapshot *NetworkRewardSnapshot) {
 	}
 }
 
-// GetCurrentEpoch fetches the current epoch from the beacon chain
-func (s *Service) GetCurrentEpoch(ts time.Time) uint64 {
+// TimeToEpoch returns the epoch of the given time.
+func (s *Service) TimeToEpoch(ts time.Time) uint64 {
 	if int64(GENESIS_TIMESTAMP) > ts.Unix() {
 		return 0
 	}
 	return uint64((ts.Unix() - int64(GENESIS_TIMESTAMP)) / int64(SECONDS_PER_SLOT) / int64(SLOTS_PER_EPOCH))
 
+}
+
+// EpochToTime returns the time of the given epoch.
+func (s *Service) EpochToTime(epoch uint64) time.Time {
+	return time.Unix(int64(GENESIS_TIMESTAMP)+(int64(epoch)+1)*int64(SECONDS_PER_EPOCH), 0).UTC()
 }
 
 func addWei(base, delta []byte) []byte {

@@ -316,7 +316,7 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		}
 	}
 
-	currentEpoch := s.rewardsService.GetCurrentEpoch(time.Now())
+	currentEpoch := s.rewardsService.TimeToEpoch(time.Now())
 	validatorIndices, err := s.doraDB.ActiveValidatorsIndexByAddress(ctx, req.Address, currentEpoch)
 	if err != nil {
 		if errors.Is(err, dora.ErrInvalidAddress) {

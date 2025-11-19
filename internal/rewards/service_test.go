@@ -26,6 +26,8 @@ func TestTotalNetworkRewards(t *testing.T) {
 		AttestationSourceReward: 64,
 	}
 	svc.cache[1].TxFeeRewardWei = new(big.Int).Mul(big.NewInt(5), gweiScalar).Bytes()
+	currentEpoch := svc.TimeToEpoch(time.Now())
+	svc.latestSyncEpoch = currentEpoch
 	svc.cacheMux.Unlock()
 
 	snapshot := svc.TotalNetworkRewards()
@@ -44,8 +46,11 @@ func TestTotalNetworkRewards(t *testing.T) {
 	if snapshot.TotalEffectiveBalanceGwei != defaultEffectiveBalanceGwei {
 		t.Fatalf("unexpected effective balance: %d", snapshot.TotalEffectiveBalanceGwei)
 	}
-	if math.Abs(snapshot.WindowDurationSeconds-2*3600) > 2 {
-		t.Fatalf("duration not close to 2h: %f", snapshot.WindowDurationSeconds)
+
+	expectedEnd := svc.EpochToTime(currentEpoch)
+	expectedDuration := expectedEnd.Sub(windowStart).Seconds()
+	if math.Abs(snapshot.WindowDurationSeconds-expectedDuration) > 2 {
+		t.Fatalf("duration mismatch: got %f want %f", snapshot.WindowDurationSeconds, expectedDuration)
 	}
 	expectedAPR := float64(snapshot.TotalRewardsGwei) / float64(snapshot.TotalEffectiveBalanceGwei)
 	expectedAPR *= cfg.CacheResetInterval.Seconds() / snapshot.WindowDurationSeconds
