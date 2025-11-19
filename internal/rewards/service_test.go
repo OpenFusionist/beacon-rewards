@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"endurance-rewards/internal/config"
+
 	"github.com/gobitfly/eth-rewards/types"
 )
 
@@ -28,8 +29,8 @@ func TestTotalNetworkRewards(t *testing.T) {
 	svc.cacheMux.Unlock()
 
 	snapshot := svc.TotalNetworkRewards()
-	if snapshot.ValidatorCount != 1 {
-		t.Fatalf("expected 1 validator, got %d", snapshot.ValidatorCount)
+	if snapshot.ActiveValidatorCount != 1 {
+		t.Fatalf("expected 1 validator, got %d", snapshot.ActiveValidatorCount)
 	}
 	if snapshot.ClRewardsGwei != 64 {
 		t.Fatalf("unexpected CL rewards: %d", snapshot.ClRewardsGwei)
@@ -49,7 +50,7 @@ func TestTotalNetworkRewards(t *testing.T) {
 	expectedAPR := float64(snapshot.TotalRewardsGwei) / float64(snapshot.TotalEffectiveBalanceGwei)
 	expectedAPR *= cfg.CacheResetInterval.Seconds() / snapshot.WindowDurationSeconds
 	expectedAPR *= 100.0 * 365.0
-	if math.Abs(snapshot.DailyAprPercent-expectedAPR) > 1e-9 {
-		t.Fatalf("unexpected apr: got %f want %f", snapshot.DailyAprPercent, expectedAPR)
+	if math.Abs(snapshot.ProjectAprPercent-expectedAPR) > 1e-9 {
+		t.Fatalf("unexpected apr: got %f want %f", snapshot.ProjectAprPercent, expectedAPR)
 	}
 }

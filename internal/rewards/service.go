@@ -324,11 +324,11 @@ func (s *Service) computeNetworkSnapshotLocked(now time.Time) *NetworkRewardSnap
 		elRewardsWei.Add(elRewardsWei, weiBytesToBigInt(income.TxFeeRewardWei))
 	}
 	elRewardsGwei := new(big.Int).Div(elRewardsWei, gweiScalar).Int64()
-	snapshot.ValidatorCount = len(s.cache)
+	snapshot.ActiveValidatorCount = len(s.cache)
 	if activeCount, err := s.countActiveValidators(now); err != nil {
 		slog.Error("Failed to count active validators", "error", err)
 	} else if activeCount > 0 {
-		snapshot.ValidatorCount = int(activeCount)
+		snapshot.ActiveValidatorCount = int(activeCount)
 	}
 	snapshot.ClRewardsGwei = clRewardsTotal
 	snapshot.ElRewardsGwei = elRewardsGwei
@@ -347,7 +347,7 @@ func (s *Service) computeNetworkSnapshotLocked(now time.Time) *NetworkRewardSnap
 		apr := float64(snapshot.TotalRewardsGwei) / float64(snapshot.TotalEffectiveBalanceGwei)
 		apr *= s.config.CacheResetInterval.Seconds() / snapshot.WindowDurationSeconds
 		apr *= 100.0 * 365.0
-		snapshot.DailyAprPercent = apr
+		snapshot.ProjectAprPercent = apr
 	}
 
 	return snapshot

@@ -17,12 +17,12 @@ type NetworkRewardSnapshot struct {
 	WindowStart               time.Time `json:"window_start"`
 	WindowEnd                 time.Time `json:"window_end"`
 	WindowDurationSeconds     float64   `json:"window_duration_seconds"`
-	ValidatorCount            int       `json:"validator_count"`
+	ActiveValidatorCount      int       `json:"active_validator_count"`
 	ClRewardsGwei             int64     `json:"cl_rewards_gwei"`
 	ElRewardsGwei             int64     `json:"el_rewards_gwei"`
 	TotalRewardsGwei          int64     `json:"total_rewards_gwei"`
 	TotalEffectiveBalanceGwei int64     `json:"total_effective_balance_gwei"`
-	DailyAprPercent           float64   `json:"daily_apr_percent"`
+	ProjectAprPercent         float64   `json:"project_apr_percent"`
 }
 
 // HistoryStore appends daily snapshots to a local jsonl file.
