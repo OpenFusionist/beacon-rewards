@@ -133,7 +133,7 @@ func (s *Server) healthHandler(c *gin.Context) {
 // @Tags         Deposits
 // @Produce      json
 // @Param        limit    query     int     false  "Number of results to return"  default(100)
-// @Param        sort_by  query     string  false  "Sort field (total_deposit,depositor_address,validators_total, slashed, voluntary_exited, active)"  default(total_deposit)
+// @Param        sort_by  query     string  false  "Sort field (total_deposit,depositor_address,validators_total, slashed, voluntary_exited, active, total_active_effective_balance)"  default(total_deposit)
 // @Param        order    query     string  false  "Sort order (asc|desc)"  default(desc)
 // @Success      200     {object}  map[string]interface{}
 // @Failure      503     {object}  map[string]string
@@ -159,7 +159,7 @@ func (s *Server) topDepositsHandler(c *gin.Context) {
 // @Tags         Deposits
 // @Produce      json
 // @Param        limit    query     int     false  "Number of results to return"  default(100)
-// @Param        sort_by  query     string  false  "Sort field (total_deposit,withdrawal_address,validators_total, slashed, voluntary_exited, active)"  default(total_deposit)
+// @Param        sort_by  query     string  false  "Sort field (total_deposit,withdrawal_address,validators_total, slashed, voluntary_exited, active, total_active_effective_balance)"  default(total_deposit)
 // @Param        order    query     string  false  "Sort order (asc|desc)"  default(desc)
 // @Success      200     {object}  map[string]interface{}
 // @Failure      503     {object}  map[string]string

@@ -65,6 +65,7 @@ type DepositorStat struct {
 // ValidatorStatus captures validator status counts shared by depositor/withdrawal stats.
 type ValidatorStatus struct {
 	TotalDeposit    int64 `json:"total_deposit"`
+	TotalActiveEffectiveBalance int64 `json:"total_active_effective_balance"`
 	ValidatorsTotal int64 `json:"validators_total"`
 	Slashed         int64 `json:"slashed"`
 	VoluntaryExited int64 `json:"voluntary_exited"`
@@ -81,6 +82,7 @@ func (d *DB) TopWithdrawalAddresses(ctx context.Context, limit int, sortBy strin
 SELECT
   '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') AS withdrawal_address,
   COALESCE(SUM(d.amount), 0)::bigint AS total_deposit,
+  COALESCE(SUM(v.effective_balance) FILTER (WHERE NOT v.slashed AND v.effective_balance > 0), 0)::bigint AS total_active_effective_balance,
   COUNT(DISTINCT v.validator_index) AS validators_total,
   COUNT(DISTINCT v.validator_index) FILTER (WHERE v.slashed) AS slashed,
   COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance = 0) AS voluntary_exited,
@@ -96,6 +98,7 @@ LIMIT $1`
 		return rows.Scan(
 			&stat.WithdrawalAddress,
 			&stat.TotalDeposit,
+			&stat.TotalActiveEffectiveBalance,
 			&stat.ValidatorsTotal,
 			&stat.Slashed,
 			&stat.VoluntaryExited,
@@ -110,6 +113,7 @@ func (d *DB) TopDepositorAddresses(ctx context.Context, limit int, sortBy string
 SELECT
   '0x' || encode(dt.tx_sender,'hex') as depositor_address,
   SUM(dt.amount)::bigint AS total_deposit,
+  COALESCE(SUM(v.effective_balance) FILTER (WHERE NOT v.slashed AND v.effective_balance > 0), 0)::bigint AS total_active_effective_balance,
   COUNT(DISTINCT v.validator_index) AS validators_total,
   COUNT(DISTINCT v.validator_index) FILTER (WHERE v.slashed) AS slashed,
   COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance = 0) AS voluntary_exited,
@@ -126,6 +130,7 @@ LIMIT $1`
 		return rows.Scan(
 			&stat.DepositorAddress,
 			&stat.TotalDeposit,
+			&stat.TotalActiveEffectiveBalance,
 			&stat.ValidatorsTotal,
 			&stat.Slashed,
 			&stat.VoluntaryExited,
@@ -136,7 +141,7 @@ LIMIT $1`
 
 func OrderBy(sortBy string) string {
 	switch sortBy {
-	case "depositor_address", "withdrawal_address", "validators_total", "slashed", "voluntary_exited", "active":
+	case "depositor_address", "withdrawal_address", "validators_total", "slashed", "voluntary_exited", "active", "total_active_effective_balance":
 		return sortBy
 	default:
 		return "total_deposit"
