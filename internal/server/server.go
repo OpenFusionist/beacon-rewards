@@ -7,8 +7,10 @@ import (
 	"endurance-rewards/internal/rewards"
 	"endurance-rewards/internal/utils"
 	"errors"
+	"html/template"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +37,7 @@ type Server struct {
 	router          *gin.Engine
 	httpServer      *http.Server
 	depositorLabels map[string]string
+	templates       map[string]*template.Template
 }
 
 // NewServer creates a new HTTP server
@@ -49,12 +52,23 @@ func NewServer(cfg *config.Config, rewardsService *rewards.Service, doraDB *dora
 		slog.Warn("Failed to load depositor labels", "path", cfg.DepositorLabelsFile, "error", err)
 	}
 
+	templates, err := loadTemplates()
+	if err != nil {
+		slog.Warn("Failed to load templates", "error", err)
+	}
+
 	s := &Server{
 		config:          cfg,
 		rewardsService:  rewardsService,
 		doraDB:          doraDB,
 		router:          router,
 		depositorLabels: depositorLabels,
+		templates:       templates,
+	}
+
+	// Set HTML renderer
+	if templates != nil {
+		s.router.HTMLRender = &HTMLRenderer{templates: templates}
 	}
 
 	s.setupRoutes()
@@ -64,19 +78,34 @@ func NewServer(cfg *config.Config, rewardsService *rewards.Service, doraDB *dora
 
 // setupRoutes configures the API routes
 func (s *Server) setupRoutes() {
+	// Static files
+	s.router.Static("/static", "./internal/server/static")
+
+	// Page routes (HTML pages) - order matters, more specific routes first
+	s.router.GET("/", func(c *gin.Context) {
+		slog.Info("Root path accessed, redirecting to top-deposits")
+		c.Redirect(http.StatusFound, "/deposits/top-deposits")
+	})
+
+	// Log route registration
+	slog.Info("Registering routes",
+		"top-deposits", "/deposits/top-deposits",
+		"network-rewards", "/rewards/network",
+		"address-rewards", "/rewards/by-address")
+
+	s.router.GET("/deposits/top-deposits", s.topDepositsPageOrAPIHandler)
+	s.router.GET("/rewards/network", s.networkRewardsPageOrAPIHandler)
+	s.router.GET("/rewards/by-address", s.addressRewardsPageHandler)
+
 	// Health check endpoint
 	s.router.GET("/health", s.healthHandler)
 
-	// Rewards endpoint
-	s.router.GET("/rewards/network", s.networkRewardsHandler)
+	// API endpoints
 	s.router.POST("/rewards", s.rewardsHandler)
 	s.router.POST("/rewards/by-address", s.addressRewardsHandler)
 
 	// get top deposits by witrdraw address
 	s.router.GET("/deposits/top-withdrawals", s.topWithdrawalsHandler)
-
-	// get top deposits by address to deposit contracts
-	s.router.GET("/deposits/top-deposits", s.topDepositsHandler)
 
 	// Swagger UI (requires generated docs; run `swag init` and import docs package in main)
 	//http://localhost:8080/swagger/index.html
@@ -208,7 +237,7 @@ type RewardsRequest struct {
 
 // AddressRewardsRequest represents the request body for reward aggregation per depositor address.
 type AddressRewardsRequest struct {
-	Address string `json:"address" binding:"required"`
+	Address string `json:"address" form:"address" binding:"required"`
 }
 
 // AddressRewardsResult captures the aggregated rewards per depositor or withdrawal address.
@@ -305,7 +334,14 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 	}
 
 	var req AddressRewardsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var err error
+	contentType := c.GetHeader("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		err = c.ShouldBindJSON(&req)
+	} else {
+		err = c.ShouldBind(&req)
+	}
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid request body: address is required",
 		})
@@ -515,4 +551,206 @@ func loggingMiddleware() gin.HandlerFunc {
 
 		slog.Info("HTTP request", "method", c.Request.Method, "path", path, "query", query, "status", statusCode, "latency", latency, "ip", c.ClientIP())
 	}
+}
+
+// Page handlers
+
+func (s *Server) topDepositsPageOrAPIHandler(c *gin.Context) {
+	slog.Info("topDepositsPageOrAPIHandler called",
+		"path", c.Request.URL.Path,
+		"method", c.Request.Method,
+		"hx-request", c.GetHeader("HX-Request"),
+		"accept", c.GetHeader("Accept"))
+
+	// Check if this is an HTMX request (for table fragment) or API request
+	if c.GetHeader("HX-Request") == "true" {
+		slog.Info("Handling as HTMX request for table fragment")
+		s.topDepositsTableHandler(c)
+		return
+	}
+
+	// Check if this is an API request (Accept: application/json)
+	accept := c.GetHeader("Accept")
+	if accept != "" && strings.Contains(accept, "application/json") {
+		slog.Info("Handling as JSON API request")
+		s.topDepositsAPIHandler(c)
+		return
+	}
+
+	// Otherwise, render the page
+	if len(s.templates) == 0 {
+		slog.Error("Templates not loaded")
+		c.String(http.StatusInternalServerError, "Templates not loaded")
+		return
+	}
+
+	limit := s.limitParam(c)
+	sortBy := strings.TrimSpace(c.Query("sort_by"))
+	if sortBy == "" {
+		sortBy = "total_deposit"
+	}
+	order := strings.ToLower(strings.TrimSpace(c.Query("order")))
+	if order == "" {
+		order = "desc"
+	}
+
+	slog.Info("Rendering top-deposits.html template",
+		"path", c.Request.URL.Path,
+		"limit", limit,
+		"sortBy", sortBy,
+		"order", order)
+
+	data := gin.H{
+		"Limit":  limit,
+		"SortBy": sortBy,
+		"Order":  order,
+	}
+
+	c.HTML(http.StatusOK, "top-deposits.html", data)
+}
+
+func (s *Server) topDepositsAPIHandler(c *gin.Context) {
+	if !s.ensureDoraDB(c) {
+		return
+	}
+
+	s.respondWithTop(c, func(ctx context.Context, limit int, sortBy string, order string) (any, error) {
+		stats, err := s.doraDB.TopDepositorAddresses(ctx, limit, sortBy, order)
+		if err != nil {
+			return nil, err
+		}
+		s.applyDepositorLabels(stats)
+		return stats, nil
+	})
+}
+
+func (s *Server) topDepositsTableHandler(c *gin.Context) {
+	if !s.ensureDoraDB(c) {
+		return
+	}
+
+	if len(s.templates) == 0 {
+		c.String(http.StatusInternalServerError, "Templates not loaded")
+		return
+	}
+
+	limit := s.limitParam(c)
+	sortBy := strings.TrimSpace(c.Query("sort_by"))
+	if sortBy == "" {
+		sortBy = "total_deposit"
+	}
+	order := strings.ToLower(strings.TrimSpace(c.Query("order")))
+	if order == "" {
+		order = "desc"
+	}
+
+	ctx, cancel := s.requestContext(c)
+	defer cancel()
+
+	stats, err := s.doraDB.TopDepositorAddresses(ctx, limit, sortBy, order)
+	if err != nil {
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{"error": err.Error()})
+		return
+	}
+	s.applyDepositorLabels(stats)
+
+	// Convert stats to map for template
+	results := make([]map[string]interface{}, len(stats))
+	for i, stat := range stats {
+		results[i] = map[string]interface{}{
+			"depositor_address":              stat.DepositorAddress,
+			"depositor_label":                stat.DepositorLabel,
+			"total_deposit":                  stat.TotalDeposit,
+			"validators_total":               stat.ValidatorsTotal,
+			"active":                         stat.Active,
+			"slashed":                        stat.Slashed,
+			"voluntary_exited":               stat.VoluntaryExited,
+			"total_active_effective_balance": stat.TotalActiveEffectiveBalance,
+		}
+	}
+
+	data := gin.H{
+		"results": results,
+		"sort_by": sortBy,
+		"order":   order,
+	}
+
+	c.HTML(http.StatusOK, "top-deposits-table.html", data)
+}
+
+func (s *Server) networkRewardsPageOrAPIHandler(c *gin.Context) {
+	slog.Info("networkRewardsPageOrAPIHandler called",
+		"path", c.Request.URL.Path,
+		"method", c.Request.Method,
+		"hx-request", c.GetHeader("HX-Request"),
+		"accept", c.GetHeader("Accept"),
+		"user-agent", c.GetHeader("User-Agent"))
+
+	// Check if this is an API request (Accept: application/json)
+	accept := c.GetHeader("Accept")
+	if accept != "" && strings.Contains(accept, "application/json") {
+		slog.Info("Handling as JSON API request")
+		s.networkRewardsHandler(c)
+		return
+	}
+
+	// Check if this is an HTMX request - return JSON data
+	if c.GetHeader("HX-Request") == "true" {
+		slog.Info("Handling as HTMX request, returning JSON")
+		s.networkRewardsHandler(c)
+		return
+	}
+
+	// Otherwise, render the page
+	if len(s.templates) == 0 {
+		slog.Error("Templates not loaded")
+		c.String(http.StatusInternalServerError, "Templates not loaded")
+		return
+	}
+
+	if _, ok := s.templates["network-rewards.html"]; !ok {
+		available := s.availableTemplateNames()
+		slog.Error("Template not found", "name", "network-rewards.html", "available", available)
+		c.String(http.StatusInternalServerError, "Template network-rewards.html not found. Available templates: "+available)
+		return
+	}
+
+	slog.Info("Rendering network-rewards.html template", "path", c.Request.URL.Path)
+	c.HTML(http.StatusOK, "network-rewards.html", gin.H{})
+}
+
+func (s *Server) addressRewardsPageHandler(c *gin.Context) {
+	slog.Info("addressRewardsPageHandler called",
+		"path", c.Request.URL.Path,
+		"method", c.Request.Method,
+		"hx-request", c.GetHeader("HX-Request"),
+		"accept", c.GetHeader("Accept"))
+
+	if len(s.templates) == 0 {
+		slog.Error("Templates not loaded")
+		c.String(http.StatusInternalServerError, "Templates not loaded")
+		return
+	}
+
+	if _, ok := s.templates["address-rewards.html"]; !ok {
+		available := s.availableTemplateNames()
+		slog.Error("Template not found", "name", "address-rewards.html", "available", available)
+		c.String(http.StatusInternalServerError, "Template address-rewards.html not found. Available templates: "+available)
+		return
+	}
+
+	slog.Info("Rendering address-rewards.html template", "path", c.Request.URL.Path)
+	c.HTML(http.StatusOK, "address-rewards.html", gin.H{})
+}
+
+func (s *Server) availableTemplateNames() string {
+	if len(s.templates) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(s.templates))
+	for name := range s.templates {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ",")
 }

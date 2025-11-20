@@ -1,0 +1,65 @@
+{{if .results}}
+<div class="table-container">
+    <table>
+        <thead>
+            <tr>
+                <th class="sortable" data-sort-by="total_deposit" data-order="{{if eq .sort_by "total_deposit"}}{{.order}}{{end}}">排名</th>
+                <th class="sortable" data-sort-by="depositor_address" data-order="{{if eq .sort_by "depositor_address"}}{{.order}}{{end}}">存款地址</th>
+                <th>标签</th>
+                <th class="sortable" data-sort-by="total_deposit" data-order="{{if eq .sort_by "total_deposit"}}{{.order}}{{end}}">总存款金额 (ACE)</th>
+                <th class="sortable" data-sort-by="validators_total" data-order="{{if eq .sort_by "validators_total"}}{{.order}}{{end}}">Validator 总数</th>
+                <th class="sortable" data-sort-by="active" data-order="{{if eq .sort_by "active"}}{{.order}}{{end}}">活跃数量</th>
+                <th class="sortable" data-sort-by="slashed" data-order="{{if eq .sort_by "slashed"}}{{.order}}{{end}}">被罚没数量</th>
+                <th class="sortable" data-sort-by="voluntary_exited" data-order="{{if eq .sort_by "voluntary_exited"}}{{.order}}{{end}}">主动退出数量</th>
+                <th class="sortable" data-sort-by="total_active_effective_balance" data-order="{{if eq .sort_by "total_active_effective_balance"}}{{.order}}{{end}}">总有效余额 (ACE)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range $index, $item := .results}}
+            <tr>
+                <td>
+                    {{if eq $index 0}}
+                        <span class="rank top-1">{{add $index 1}}</span>
+                    {{else if eq $index 1}}
+                        <span class="rank top-2">{{add $index 1}}</span>
+                    {{else if eq $index 2}}
+                        <span class="rank top-3">{{add $index 1}}</span>
+                    {{else}}
+                        <span class="rank">{{add $index 1}}</span>
+                    {{end}}
+                </td>
+                <td>
+                    <div class="address-with-copy">
+                        <span class="address" title="{{$item.depositor_address}}">
+                            {{formatAddress $item.depositor_address}}
+                        </span>
+                        <button 
+                            type="button"
+                            class="copy-btn"
+                            data-address="{{$item.depositor_address}}"
+                            aria-label="Copy Address"
+                            title="Copy Address"
+                            data-feedback="Copy Address">
+                            <span class="sr-only">Copy Address</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </td>
+                <td>{{if $item.depositor_label}}{{$item.depositor_label}}{{else}}-{{end}}</td>
+                <td>{{formatGweiToAce $item.total_deposit}}</td>
+                <td>{{$item.validators_total}}</td>
+                <td><span class="badge badge-success">{{$item.active}}</span></td>
+                <td>{{if gt $item.slashed 0}}<span class="badge badge-danger">{{$item.slashed}}</span>{{else}}0{{end}}</td>
+                <td>{{if gt $item.voluntary_exited 0}}<span class="badge badge-warning">{{$item.voluntary_exited}}</span>{{else}}0{{end}}</td>
+                <td>{{formatGweiToAce $item.total_active_effective_balance}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="empty">暂无数据</div>
+{{end}}
