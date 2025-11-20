@@ -1,0 +1,141 @@
+{{template "base.html" .}}
+
+{{define "title"}}大户排行 - Endurance Rewards{{end}}
+
+{{define "content"}}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">大户排行</h1>
+    </div>
+
+    <div id="table-container" 
+         hx-get="/deposits/top-deposits?limit={{.Limit}}&sort_by={{.SortBy}}&order={{.Order}}" 
+         hx-trigger="load" 
+         hx-target="this" 
+         hx-swap="innerHTML"
+         hx-headers='{"HX-Request": "true"}'
+         data-page="top-deposits">
+        <div class="loading">加载中...</div>
+    </div>
+</div>
+
+<div class="footnotes">
+    <h3>字段说明</h3>
+    <ol>
+        <li><strong>存款地址</strong>：向存款合约发送交易的地址</li>
+        <li><strong>总存款金额</strong>：该地址向存款合约发送的总金额（单位：ACE）</li>
+        <li><strong>Validator 总数</strong>：该地址资助的验证者总数</li>
+        <li><strong>活跃数量</strong>：当前处于活跃状态的验证者数量（未被罚没且有效余额大于0）</li>
+        <li><strong>被罚没数量</strong>：因违规行为被罚没的验证者数量</li>
+        <li><strong>主动退出数量</strong>：主动退出且有效余额为0的验证者数量</li>
+        <li><strong>总有效余额</strong>：所有活跃验证者的有效余额总和（单位：ACE）</li>
+    </ol>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    // Only execute on this page
+    (function() {
+        const COPY_DEFAULT_LABEL = 'Copy Address';
+        const COPY_SUCCESS_LABEL = 'Copied';
+
+        function showCopyFeedback(button) {
+            button.dataset.feedback = COPY_SUCCESS_LABEL;
+            button.classList.add('copied', 'show-feedback');
+            button.setAttribute('aria-label', COPY_SUCCESS_LABEL);
+            button.setAttribute('title', COPY_SUCCESS_LABEL);
+            setTimeout(() => {
+                button.classList.remove('copied', 'show-feedback');
+                button.dataset.feedback = COPY_DEFAULT_LABEL;
+                button.setAttribute('aria-label', COPY_DEFAULT_LABEL);
+                button.setAttribute('title', COPY_DEFAULT_LABEL);
+            }, 1600);
+        }
+        // Check if we're on the top-deposits page
+        if (!document.getElementById('table-container')) {
+            return;
+        }
+
+        // Handle sort clicks - scoped to this page only
+        document.addEventListener('click', function(e) {
+            const th = e.target.closest('th.sortable');
+            if (!th || !document.getElementById('table-container')) {
+                return;
+            }
+            
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const sortBy = th.dataset.sortBy;
+            const currentOrder = th.dataset.order || 'desc';
+            const newOrder = currentOrder === 'desc' ? 'asc' : 'desc';
+            
+            // Update all th elements
+            document.querySelectorAll('th').forEach(h => {
+                h.classList.remove('sort-asc', 'sort-desc');
+                h.dataset.order = '';
+            });
+            
+            th.classList.add('sort-' + newOrder);
+            th.dataset.order = newOrder;
+            
+            // Trigger HTMX request
+            const limit = {{.Limit}};
+            htmx.ajax('GET', `/deposits/top-deposits?limit=${limit}&sort_by=${sortBy}&order=${newOrder}`, {
+                target: '#table-container',
+                swap: 'innerHTML',
+                headers: {'HX-Request': 'true'}
+            });
+        }, true); // Use capture phase
+
+        function copyAddress(address) {
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                return navigator.clipboard.writeText(address);
+            }
+            return new Promise((resolve, reject) => {
+                const textarea = document.createElement('textarea');
+                textarea.value = address;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                try {
+                    const ok = document.execCommand('copy');
+                    ok ? resolve() : reject(new Error('execCommand copy failed'));
+                } catch (err) {
+                    reject(err);
+                } finally {
+                    document.body.removeChild(textarea);
+                }
+            });
+        }
+
+        // Copy address to clipboard - scoped to this page only
+        document.addEventListener('click', function(e) {
+            const copyBtn = e.target.closest('.copy-btn');
+            if (!copyBtn || !document.getElementById('table-container')) {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            const address = copyBtn.dataset.address;
+            if (!address) {
+                return;
+            }
+            copyAddress(address)
+                .then(() => showCopyFeedback(copyBtn))
+                .catch(err => {
+                    console.error('Failed to copy:', err);
+                    copyBtn.dataset.feedback = 'Copy failed';
+                    copyBtn.classList.add('show-feedback');
+                    setTimeout(() => {
+                        copyBtn.classList.remove('show-feedback');
+                        copyBtn.dataset.feedback = COPY_DEFAULT_LABEL;
+                    }, 1200);
+                });
+        }, true); // Use capture phase
+    })();
+</script>
+{{end}}

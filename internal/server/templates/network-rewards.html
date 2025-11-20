@@ -1,0 +1,243 @@
+{{template "base.html" .}}
+
+{{define "title"}}全网收益 - Endurance Rewards{{end}}
+
+{{define "head"}}
+<style>
+    .current-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    .stat-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        box-shadow: var(--shadow-lg);
+    }
+    .stat-box h3 {
+        font-size: 0.875rem;
+        opacity: 0.9;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+    }
+    .stat-box .value {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+    }
+    .stat-box .subvalue {
+        font-size: 0.875rem;
+        opacity: 0.8;
+    }
+    .chart-section {
+        background: var(--card-bg);
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        box-shadow: var(--shadow);
+    }
+</style>
+{{end}}
+
+{{define "content"}}
+<div id="network-rewards" 
+     hx-get="/rewards/network" 
+     hx-trigger="load" 
+     hx-target="this" 
+     hx-swap="innerHTML"
+     hx-headers='{"HX-Request": "true"}'
+     data-page="network-rewards">
+    <div class="loading">加载中...</div>
+</div>
+
+<div class="footnotes">
+    <h3>字段说明</h3>
+    <ol>
+        <li><strong>时间窗口</strong>：当前统计的时间范围（从窗口开始到窗口结束）</li>
+        <li><strong>活跃 Validator 数量</strong>：当前处于活跃状态的验证者总数</li>
+        <li><strong>CL 收益</strong>：共识层（Consensus Layer）收益，包括验证奖励、提案奖励等（单位：ACE）</li>
+        <li><strong>EL 收益</strong>：执行层（Execution Layer）收益，主要是交易手续费（单位：ACE）</li>
+        <li><strong>总收益</strong>：CL 收益和 EL 收益的总和（单位：ACE）</li>
+        <li><strong>总有效余额</strong>：所有活跃验证者的有效余额总和（单位：ACE）</li>
+        <li><strong>预估 APR</strong>：基于当前窗口收益计算的年化收益率（百分比）</li>
+    </ol>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    let chart = null;
+
+    function formatGweiToAce(gwei) {
+        return (gwei / 1e9).toFixed(6);
+    }
+
+    function formatNumber(num) {
+        return new Intl.NumberFormat('zh-CN').format(num);
+    }
+
+    function formatTime(t) {
+        return new Date(t).toLocaleString('zh-CN', {timeZone: 'UTC'}) + ' UTC';
+    }
+
+    function formatDuration(seconds) {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        return `${hours}小时${minutes}分钟`;
+    }
+
+    document.body.addEventListener('htmx:afterSwap', function(e) {
+        if (e.detail.target.id === 'network-rewards') {
+            const data = JSON.parse(e.detail.xhr.responseText);
+            renderNetworkRewards(data);
+        }
+    });
+
+    function renderNetworkRewards(data) {
+        const current = data.current;
+        const history = data.history || [];
+
+        // Render current stats
+        const currentHtml = `
+            <div class="current-stats">
+                <div class="stat-box">
+                    <h3>最后收益日</h3>
+                    <div class="value">${formatTime(current.window_end)}</div>
+                    <div class="subvalue">持续时间: ${formatDuration(current.window_duration_seconds)}</div>
+                </div>
+                <div class="stat-box" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                    <h3>预估 APR</h3>
+                    <div class="value">${current.project_apr_percent.toFixed(3)}%</div>
+                    <div class="subvalue">基于最后收益日</div>
+                </div>
+                <div class="stat-box" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                    <h3>总收益 (ACE)</h3>
+                    <div class="value">${formatNumber(formatGweiToAce(current.total_rewards_gwei))}</div>
+                    <div class="subvalue">CL: ${formatNumber(formatGweiToAce(current.cl_rewards_gwei))} | EL: ${formatNumber(formatGweiToAce(current.el_rewards_gwei))}</div>
+                </div>
+                <div class="stat-box" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                    <h3>活跃 Validator</h3>
+                    <div class="value">${formatNumber(current.active_validator_count)}</div>
+                    <div class="subvalue">总有效余额: ${formatNumber(formatGweiToAce(current.total_effective_balance_gwei))} ACE</div>
+                </div>
+            </div>
+        `;
+
+        // Render chart
+        let chartHtml = '';
+        if (history.length > 0) {
+            chartHtml = `
+                <div class="chart-section">
+                    <h2 style="margin-bottom: 1rem;">历史收益趋势</h2>
+                    <div class="chart-container">
+                        <canvas id="rewardsChart"></canvas>
+                    </div>
+                </div>
+            `;
+        }
+
+        document.getElementById('network-rewards').innerHTML = currentHtml + chartHtml;
+
+        // Render chart
+        if (history.length > 0 && document.getElementById('rewardsChart')) {
+            renderChart(history);
+        }
+    }
+
+    function renderChart(history) {
+        const ctx = document.getElementById('rewardsChart').getContext('2d');
+        
+        // Sort history by time
+        const sortedHistory = [...history].sort((a, b) => 
+            new Date(a.window_start) - new Date(b.window_start)
+        );
+
+        const labels = sortedHistory.map(h => {
+            const date = new Date(h.window_end);
+            return date.toLocaleDateString('zh-CN', {month: 'short', day: 'numeric'});
+        });
+
+        const totalRewards = sortedHistory.map(h => h.total_rewards_gwei / 1e9);
+        const aprData = sortedHistory.map(h => h.project_apr_percent);
+
+        if (chart) {
+            chart.destroy();
+        }
+
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: '总收益 (ACE)',
+                        data: totalRewards,
+                        borderColor: 'rgb(37, 99, 235)',
+                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                        yAxisID: 'y',
+                        tension: 0.1
+                    },
+                    {
+                        label: '预估 APR (%)',
+                        data: aprData,
+                        borderColor: 'rgb(245, 158, 11)',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        yAxisID: 'y1',
+                        tension: 0.1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                if (context.datasetIndex === 0) {
+                                    return `总收益: ${formatNumber(context.parsed.y)} ACE`;
+                                } else {
+                                    return `预估 APR: ${context.parsed.y.toFixed(3)}%`;
+                                }
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: {
+                            display: true,
+                            text: '总收益 (ACE)'
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: '预估 APR (%)'
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    }
+                }
+            }
+        });
+    }
+</script>
+{{end}}
+
