@@ -226,13 +226,21 @@ type AddressRewardsResult struct {
 	WindowEnd                 time.Time `json:"window_end"`
 }
 
+// RewardsResponse
+type RewardsResponse struct {
+	ValidatorCount int                                 `json:"validator_count"`
+	Rewards        map[uint64]*rewards.ValidatorReward `json:"rewards"`
+	WindowStart    time.Time                           `json:"window_start"`
+	WindowEnd      time.Time                           `json:"window_end"`
+}
+
 // rewardsHandler handles reward queries
 // @Summary      Get total rewards (EL+CL) for validators from Today's rewards from UTC 0:00 to the present.
 // @Tags         Rewards
 // @Accept       json
 // @Produce      json
 // @Param        request  body   RewardsRequest  true  "Validators request"
-// @Success      200      {object}  map[string]interface{}
+// @Success      200      {object}  RewardsResponse
 // @Failure      400      {object}  map[string]string
 // @Router       /rewards [post]
 func (s *Server) rewardsHandler(c *gin.Context) {
@@ -267,11 +275,15 @@ func (s *Server) rewardsHandler(c *gin.Context) {
 
 	// Get total rewards (EL+CL) for each requested validator
 	validatorRewards := s.rewardsService.GetTotalRewards(req.Validators, effectiveBalances)
+	windowStart, windowEnd := s.rewardsService.GetRewardWindow()
 
-	c.JSON(http.StatusOK, gin.H{
-		"validator_count": len(req.Validators),
-		"rewards":         validatorRewards,
-	})
+	result := RewardsResponse{
+		ValidatorCount: len(req.Validators),
+		Rewards:        validatorRewards,
+		WindowStart:    windowStart,
+		WindowEnd:      windowEnd,
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // addressRewardsHandler aggregates validator rewards by withdrawal or deposit addresses.

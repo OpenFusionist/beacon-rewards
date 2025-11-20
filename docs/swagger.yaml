@@ -1,10 +1,23 @@
 definitions:
+  rewards.ValidatorReward:
+    properties:
+      cl_rewards_gwei:
+        type: integer
+      effective_balance_gwei:
+        type: integer
+      el_rewards_gwei:
+        type: integer
+      project_apr_percent:
+        type: number
+      total_rewards_gwei:
+        type: integer
+      validator_index:
+        type: integer
+    type: object
   server.AddressRewardsRequest:
     properties:
       address:
         type: string
-      include_validator_indices:
-        type: boolean
     required:
     - address
     type: object
@@ -43,6 +56,19 @@ definitions:
         type: array
     required:
     - validators
+    type: object
+  server.RewardsResponse:
+    properties:
+      rewards:
+        additionalProperties:
+          $ref: '#/definitions/rewards.ValidatorReward'
+        type: object
+      validator_count:
+        type: integer
+      window_end:
+        type: string
+      window_start:
+        type: string
     type: object
 info:
   contact: {}
@@ -163,8 +189,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/server.RewardsResponse'
         "400":
           description: Bad Request
           schema:
@@ -181,7 +206,7 @@ paths:
       - application/json
       description: Looks up validators funded by withdrawal or deposit address and
         returns the summed rewards for those validators. Set include_validator_indices
-        to true to include active validator indices in the response.
+        query parameter to true to include active validator indices in the response.
       parameters:
       - description: Addresses request
         in: body
@@ -189,6 +214,11 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/server.AddressRewardsRequest'
+      - default: false
+        description: Include validator indices in response
+        in: query
+        name: include_validator_indices
+        type: boolean
       produces:
       - application/json
       responses:

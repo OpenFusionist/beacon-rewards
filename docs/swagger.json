@@ -24,7 +24,7 @@
                     {
                         "type": "string",
                         "default": "total_deposit",
-                        "description": "Sort field (total_deposit,depositor_address,validators_total, slashed, voluntary_exited, active)",
+                        "description": "Sort field (total_deposit,depositor_address,validators_total, slashed, voluntary_exited, active, total_active_effective_balance)",
                         "name": "sort_by",
                         "in": "query"
                     },
@@ -85,7 +85,7 @@
                     {
                         "type": "string",
                         "default": "total_deposit",
-                        "description": "Sort field (total_deposit,withdrawal_address,validators_total, slashed, voluntary_exited, active)",
+                        "description": "Sort field (total_deposit,withdrawal_address,validators_total, slashed, voluntary_exited, active, total_active_effective_balance)",
                         "name": "sort_by",
                         "in": "query"
                     },
@@ -173,8 +173,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/server.RewardsResponse"
                         }
                     },
                     "400": {
@@ -191,7 +190,7 @@
         },
         "/rewards/by-address": {
             "post": {
-                "description": "Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators.",
+                "description": "Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators. Set include_validator_indices query parameter to true to include active validator indices in the response.",
                 "consumes": [
                     "application/json"
                 ],
@@ -211,6 +210,13 @@
                         "schema": {
                             "$ref": "#/definitions/server.AddressRewardsRequest"
                         }
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include validator indices in response",
+                        "name": "include_validator_indices",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -264,6 +270,29 @@
         }
     },
     "definitions": {
+        "rewards.ValidatorReward": {
+            "type": "object",
+            "properties": {
+                "cl_rewards_gwei": {
+                    "type": "integer"
+                },
+                "effective_balance_gwei": {
+                    "type": "integer"
+                },
+                "el_rewards_gwei": {
+                    "type": "integer"
+                },
+                "project_apr_percent": {
+                    "type": "number"
+                },
+                "total_rewards_gwei": {
+                    "type": "integer"
+                },
+                "validator_index": {
+                    "type": "integer"
+                }
+            }
+        },
         "server.AddressRewardsRequest": {
             "type": "object",
             "required": [
@@ -272,16 +301,15 @@
             "properties": {
                 "address": {
                     "type": "string"
-                },
-                "include_validator_indices": {
-                    "type": "boolean",
-                    "default": false
                 }
             }
         },
         "server.AddressRewardsResult": {
             "type": "object",
             "properties": {
+                "active_validator_count": {
+                    "type": "integer"
+                },
                 "address": {
                     "type": "string"
                 },
@@ -300,7 +328,13 @@
                 "total_rewards_gwei": {
                     "type": "integer"
                 },
-                "validator_count": {
+                "validator_indices": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "weighted_average_stake_time(seconds)": {
                     "type": "integer"
                 },
                 "window_end": {
@@ -322,6 +356,26 @@
                     "items": {
                         "type": "integer"
                     }
+                }
+            }
+        },
+        "server.RewardsResponse": {
+            "type": "object",
+            "properties": {
+                "rewards": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/rewards.ValidatorReward"
+                    }
+                },
+                "validator_count": {
+                    "type": "integer"
+                },
+                "window_end": {
+                    "type": "string"
+                },
+                "window_start": {
+                    "type": "string"
                 }
             }
         }

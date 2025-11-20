@@ -185,8 +185,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/server.RewardsResponse"
                         }
                     },
                     "400": {
@@ -203,7 +202,7 @@ const docTemplate = `{
         },
         "/rewards/by-address": {
             "post": {
-                "description": "Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators. Set include_validator_indices to true to include active validator indices in the response.",
+                "description": "Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators. Set include_validator_indices query parameter to true to include active validator indices in the response.",
                 "consumes": [
                     "application/json"
                 ],
@@ -223,6 +222,13 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/server.AddressRewardsRequest"
                         }
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include validator indices in response",
+                        "name": "include_validator_indices",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -276,6 +282,29 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "rewards.ValidatorReward": {
+            "type": "object",
+            "properties": {
+                "cl_rewards_gwei": {
+                    "type": "integer"
+                },
+                "effective_balance_gwei": {
+                    "type": "integer"
+                },
+                "el_rewards_gwei": {
+                    "type": "integer"
+                },
+                "project_apr_percent": {
+                    "type": "number"
+                },
+                "total_rewards_gwei": {
+                    "type": "integer"
+                },
+                "validator_index": {
+                    "type": "integer"
+                }
+            }
+        },
         "server.AddressRewardsRequest": {
             "type": "object",
             "required": [
@@ -284,9 +313,6 @@ const docTemplate = `{
             "properties": {
                 "address": {
                     "type": "string"
-                },
-                "include_validator_indices": {
-                    "type": "boolean"
                 }
             }
         },
@@ -342,6 +368,26 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                }
+            }
+        },
+        "server.RewardsResponse": {
+            "type": "object",
+            "properties": {
+                "rewards": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/rewards.ValidatorReward"
+                    }
+                },
+                "validator_count": {
+                    "type": "integer"
+                },
+                "window_end": {
+                    "type": "string"
+                },
+                "window_start": {
+                    "type": "string"
                 }
             }
         }
