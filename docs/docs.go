@@ -36,7 +36,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "total_deposit",
-                        "description": "Sort field (total_deposit,depositor_address,validators_total, slashed, voluntary_exited, active)",
+                        "description": "Sort field (total_deposit,depositor_address,validators_total, slashed, voluntary_exited, active, total_active_effective_balance)",
                         "name": "sort_by",
                         "in": "query"
                     },
@@ -97,7 +97,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "total_deposit",
-                        "description": "Sort field (total_deposit,withdrawal_address,validators_total, slashed, voluntary_exited, active)",
+                        "description": "Sort field (total_deposit,withdrawal_address,validators_total, slashed, voluntary_exited, active, total_active_effective_balance)",
                         "name": "sort_by",
                         "in": "query"
                     },
@@ -203,7 +203,7 @@ const docTemplate = `{
         },
         "/rewards/by-address": {
             "post": {
-                "description": "Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators.",
+                "description": "Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators. Set include_validator_indices to true to include active validator indices in the response.",
                 "consumes": [
                     "application/json"
                 ],
@@ -284,12 +284,18 @@ const docTemplate = `{
             "properties": {
                 "address": {
                     "type": "string"
+                },
+                "include_validator_indices": {
+                    "type": "boolean"
                 }
             }
         },
         "server.AddressRewardsResult": {
             "type": "object",
             "properties": {
+                "active_validator_count": {
+                    "type": "integer"
+                },
                 "address": {
                     "type": "string"
                 },
@@ -308,7 +314,13 @@ const docTemplate = `{
                 "total_rewards_gwei": {
                     "type": "integer"
                 },
-                "validator_count": {
+                "validator_indices": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "weighted_average_stake_time(seconds)": {
                     "type": "integer"
                 },
                 "window_end": {

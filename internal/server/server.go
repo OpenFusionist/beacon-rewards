@@ -216,6 +216,7 @@ type AddressRewardsResult struct {
 	Address                   string    `json:"address"`
 	DepositorLabel            string    `json:"depositor_label,omitempty"`
 	ActiveValidatorCount      int       `json:"active_validator_count"`
+	ValidatorIndices          []uint64  `json:"validator_indices,omitempty"`
 	ClRewardsGwei             int64     `json:"cl_rewards_gwei"`
 	ElRewardsGwei             int64     `json:"el_rewards_gwei"`
 	TotalRewardsGwei          int64     `json:"total_rewards_gwei"`
@@ -275,11 +276,12 @@ func (s *Server) rewardsHandler(c *gin.Context) {
 
 // addressRewardsHandler aggregates validator rewards by withdrawal or deposit addresses.
 // @Summary      Get aggregated validator rewards (EL+CL) per withdrawal or deposit address.
-// @Description  Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators.
+// @Description  Looks up validators funded by withdrawal or deposit address and returns the summed rewards for those validators. Set include_validator_indices query parameter to true to include active validator indices in the response.
 // @Tags         Rewards
 // @Accept       json
 // @Produce      json
 // @Param        request  body   AddressRewardsRequest  true  "Addresses request"
+// @Param        include_validator_indices  query   bool  false  "Include validator indices in response"  default(false)
 // @Success      200      {object}  AddressRewardsResult
 // @Failure      400      {object}  map[string]string
 // @Failure      503      {object}  map[string]string
@@ -390,6 +392,12 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		WindowStart:              windowStart,
 		WindowEnd:                windowEnd,
 		WeightedAverageStakeTime: weightedAvgStakeTime,
+	}
+	includeIndices := c.Query("include_validator_indices")
+	if includeIndices != "" {
+		if parsed, err := strconv.ParseBool(includeIndices); err == nil && parsed {
+			result.ValidatorIndices = validatorIndices
+		}
 	}
 
 	if label, ok := s.lookupDepositorLabel(req.Address); ok {

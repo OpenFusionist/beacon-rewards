@@ -272,6 +272,10 @@
             "properties": {
                 "address": {
                     "type": "string"
+                },
+                "include_validator_indices": {
+                    "type": "boolean",
+                    "default": false
                 }
             }
         },

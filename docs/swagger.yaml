@@ -3,11 +3,15 @@ definitions:
     properties:
       address:
         type: string
+      include_validator_indices:
+        type: boolean
     required:
     - address
     type: object
   server.AddressRewardsResult:
     properties:
+      active_validator_count:
+        type: integer
       address:
         type: string
       cl_rewards_gwei:
@@ -20,7 +24,11 @@ definitions:
         type: integer
       total_rewards_gwei:
         type: integer
-      validator_count:
+      validator_indices:
+        items:
+          type: integer
+        type: array
+      weighted_average_stake_time(seconds):
         type: integer
       window_end:
         type: string
@@ -49,7 +57,7 @@ paths:
         type: integer
       - default: total_deposit
         description: Sort field (total_deposit,depositor_address,validators_total,
-          slashed, voluntary_exited, active)
+          slashed, voluntary_exited, active, total_active_effective_balance)
         in: query
         name: sort_by
         type: string
@@ -92,7 +100,7 @@ paths:
         type: integer
       - default: total_deposit
         description: Sort field (total_deposit,withdrawal_address,validators_total,
-          slashed, voluntary_exited, active)
+          slashed, voluntary_exited, active, total_active_effective_balance)
         in: query
         name: sort_by
         type: string
@@ -172,7 +180,8 @@ paths:
       consumes:
       - application/json
       description: Looks up validators funded by withdrawal or deposit address and
-        returns the summed rewards for those validators.
+        returns the summed rewards for those validators. Set include_validator_indices
+        to true to include active validator indices in the response.
       parameters:
       - description: Addresses request
         in: body
