@@ -37,19 +37,21 @@
 <script>
     // Only execute on this page
     (function() {
-        const COPY_DEFAULT_LABEL = 'Copy Address';
-        const COPY_SUCCESS_LABEL = 'Copied';
+        let copyToastTimer = null;
 
-        function showCopyFeedback(button) {
-            button.dataset.feedback = COPY_SUCCESS_LABEL;
-            button.classList.add('copied', 'show-feedback');
-            button.setAttribute('aria-label', COPY_SUCCESS_LABEL);
-            button.setAttribute('title', COPY_SUCCESS_LABEL);
-            setTimeout(() => {
-                button.classList.remove('copied', 'show-feedback');
-                button.dataset.feedback = COPY_DEFAULT_LABEL;
-                button.setAttribute('aria-label', COPY_DEFAULT_LABEL);
-                button.setAttribute('title', COPY_DEFAULT_LABEL);
+        function showToast(message) {
+            let toast = document.querySelector('.copy-toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.className = 'copy-toast';
+                document.body.appendChild(toast);
+            }
+            toast.textContent = message;
+            toast.classList.add('show');
+
+            clearTimeout(copyToastTimer);
+            copyToastTimer = setTimeout(() => {
+                toast.classList.remove('show');
             }, 1600);
         }
         // Check if we're on the top-deposits page
@@ -68,8 +70,8 @@
             e.stopPropagation();
             
             const sortBy = th.dataset.sortBy;
-            const currentOrder = th.dataset.order || 'desc';
-            const newOrder = currentOrder === 'desc' ? 'asc' : 'desc';
+            const currentOrder = th.dataset.order || 'asc';
+            const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
             
             // Update all th elements
             document.querySelectorAll('th').forEach(h => {
@@ -114,26 +116,21 @@
 
         // Copy address to clipboard - scoped to this page only
         document.addEventListener('click', function(e) {
-            const copyBtn = e.target.closest('.copy-btn');
-            if (!copyBtn || !document.getElementById('table-container')) {
+            const copyTarget = e.target.closest('.address-copy-target');
+            if (!copyTarget || !document.getElementById('table-container')) {
                 return;
             }
             e.preventDefault();
             e.stopPropagation();
-            const address = copyBtn.dataset.address;
+            const address = copyTarget.dataset.address;
             if (!address) {
                 return;
             }
             copyAddress(address)
-                .then(() => showCopyFeedback(copyBtn))
+                .then(() => showToast('复制成功'))
                 .catch(err => {
                     console.error('Failed to copy:', err);
-                    copyBtn.dataset.feedback = 'Copy failed';
-                    copyBtn.classList.add('show-feedback');
-                    setTimeout(() => {
-                        copyBtn.classList.remove('show-feedback');
-                        copyBtn.dataset.feedback = COPY_DEFAULT_LABEL;
-                    }, 1200);
+                    showToast('复制失败');
                 });
         }, true); // Use capture phase
     })();

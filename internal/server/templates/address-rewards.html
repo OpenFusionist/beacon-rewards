@@ -57,8 +57,7 @@
 
 {{define "scripts"}}
 <script>
-    const COPY_DEFAULT_LABEL = 'Copy Address';
-    const COPY_SUCCESS_LABEL = 'Copied';
+    let copyToastTimer = null;
 
     function formatGweiToAce(gwei) {
         return (gwei / 1e9).toFixed(6);
@@ -89,6 +88,23 @@
         return addr;
     }
 
+    function showToast(message) {
+        let toast = document.querySelector('.copy-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.className = 'copy-toast';
+            document.body.appendChild(toast);
+        }
+
+        toast.textContent = message;
+        toast.classList.add('show');
+
+        clearTimeout(copyToastTimer);
+        copyToastTimer = setTimeout(() => {
+            toast.classList.remove('show');
+        }, 1600);
+    }
+
     document.body.addEventListener('htmx:afterSwap', function(e) {
         if (e.detail.target.id === 'result-container') {
             const xhr = e.detail.xhr;
@@ -111,21 +127,8 @@
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-label">地址</div>
-                        <div class="stat-value address address-with-copy" style="font-size: 1rem;">
-                            <span>${formatAddress(data.address)}</span>
-                            <button 
-                                type="button"
-                                class="copy-btn"
-                                data-address="${data.address}"
-                                aria-label="Copy Address"
-                                title="Copy Address"
-                                data-feedback="Copy Address">
-                                <span class="sr-only">Copy Address</span>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                    <rect x="9" y="9" width="13" height="13" rx="2"></rect>
-                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                </svg>
-                            </button>
+                        <div class="stat-value address address-copy-target" data-address="${data.address}" title="${data.address}" style="font-size: 1rem;">
+                            ${formatAddress(data.address)}
                         </div>
                         ${data.depositor_label ? `<div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">${data.depositor_label}</div>` : ''}
                     </div>
@@ -202,19 +205,6 @@
         `;
     }
 
-    function showCopyFeedback(button, message) {
-        button.dataset.feedback = message;
-        button.classList.add('copied', 'show-feedback');
-        button.setAttribute('aria-label', message);
-        button.setAttribute('title', message);
-        setTimeout(() => {
-            button.classList.remove('copied', 'show-feedback');
-            button.dataset.feedback = COPY_DEFAULT_LABEL;
-            button.setAttribute('aria-label', COPY_DEFAULT_LABEL);
-            button.setAttribute('title', COPY_DEFAULT_LABEL);
-        }, 1600);
-    }
-
     function copyAddress(address) {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
             return navigator.clipboard.writeText(address);
@@ -238,26 +228,21 @@
         });
     }
 
-    // Copy button handler
+    // Copy handler: click address to copy
     document.body.addEventListener('click', function(e) {
-        const copyBtn = e.target.closest('.copy-btn');
-        if (!copyBtn) {
+        const copyTarget = e.target.closest('.address-copy-target');
+        if (!copyTarget) {
             return;
         }
-        const address = copyBtn.dataset.address;
+        const address = copyTarget.dataset.address;
         if (!address) {
             return;
         }
         copyAddress(address)
-            .then(() => showCopyFeedback(copyBtn, COPY_SUCCESS_LABEL))
+            .then(() => showToast('复制成功'))
             .catch(err => {
                 console.error('Failed to copy address', err);
-                copyBtn.dataset.feedback = 'Copy failed';
-                copyBtn.classList.add('show-feedback');
-                setTimeout(() => {
-                    copyBtn.classList.remove('show-feedback');
-                    copyBtn.dataset.feedback = COPY_DEFAULT_LABEL;
-                }, 1200);
+                showToast('复制失败');
             });
     });
 

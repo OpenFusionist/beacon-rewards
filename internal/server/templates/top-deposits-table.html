@@ -1,10 +1,21 @@
 {{if .results}}
 <div class="table-container">
     <table>
+        <colgroup>
+            <col class="col-rank">
+            <col class="col-address">
+            <col class="col-label">
+            <col class="col-total-deposit">
+            <col class="col-validators">
+            <col class="col-active">
+            <col class="col-slashed">
+            <col class="col-voluntary">
+            <col class="col-effective-balance">
+        </colgroup>
         <thead>
             <tr>
-                <th class="sortable" data-sort-by="total_deposit" data-order="{{if eq .sort_by "total_deposit"}}{{.order}}{{end}}">排名</th>
-                <th class="sortable" data-sort-by="depositor_address" data-order="{{if eq .sort_by "depositor_address"}}{{.order}}{{end}}">存款地址</th>
+                <th>排名</th>
+                <th>存款地址</th>
                 <th>标签</th>
                 <th class="sortable" data-sort-by="total_deposit" data-order="{{if eq .sort_by "total_deposit"}}{{.order}}{{end}}">总存款金额 (ACE)</th>
                 <th class="sortable" data-sort-by="validators_total" data-order="{{if eq .sort_by "validators_total"}}{{.order}}{{end}}">Validator 总数</th>
@@ -29,23 +40,10 @@
                     {{end}}
                 </td>
                 <td>
-                    <div class="address-with-copy">
+                    <div class="address-with-copy address-copy-target" data-address="{{$item.depositor_address}}" title="{{$item.depositor_address}}">
                         <span class="address" title="{{$item.depositor_address}}">
                             {{formatAddress $item.depositor_address}}
                         </span>
-                        <button 
-                            type="button"
-                            class="copy-btn"
-                            data-address="{{$item.depositor_address}}"
-                            aria-label="Copy Address"
-                            title="Copy Address"
-                            data-feedback="Copy Address">
-                            <span class="sr-only">Copy Address</span>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="9" y="9" width="13" height="13" rx="2"></rect>
-                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                            </svg>
-                        </button>
                     </div>
                 </td>
                 <td>{{if $item.depositor_label}}{{$item.depositor_label}}{{else}}-{{end}}</td>
