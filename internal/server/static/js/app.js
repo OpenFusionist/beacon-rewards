@@ -58,9 +58,31 @@ function formatDuration(seconds) {
         return `${days}天 ${hours}小时`;
     }
     if (hours > 0) {
-        return `${hours}小时${minutes > 0 ? minutes + '分钟' : ''}`;
+    return `${hours}小时${minutes > 0 ? minutes + '分钟' : ''}`;
     }
     return `${minutes}分钟`;
+}
+
+function cssVar(name, fallback = '') {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name);
+    const trimmed = value ? value.trim() : '';
+    return trimmed || fallback;
+}
+
+function hexToRgb(value) {
+    if (!value) return '';
+    const hex = value.trim().replace('#', '');
+    const normalized = hex.length === 3 ? hex.split('').map((ch) => ch + ch).join('') : hex;
+    if (normalized.length !== 6) {
+        return '';
+    }
+    const r = parseInt(normalized.slice(0, 2), 16);
+    const g = parseInt(normalized.slice(2, 4), 16);
+    const b = parseInt(normalized.slice(4, 6), 16);
+    if ([r, g, b].some((channel) => Number.isNaN(channel))) {
+        return '';
+    }
+    return `${r}, ${g}, ${b}`;
 }
 
 function formatAddress(addr) {
@@ -252,16 +274,40 @@ function runCopyHandler() {
 
 function topDepositsTemplate() {
     return `
-        <div class="card" id="top-deposits-card">
-            <div class="card-header">
+        <div id="top-deposits-view" class="page-shell" data-view="top-deposits">
+            <section class="page-header">
                 <div>
-                    <h1 class="card-title">大户排行</h1>
-                    <p id="top-deposits-subtitle" style="color: var(--text-secondary); font-size: 0.95rem;">加载中...</p>
+                    <div class="page-eyebrow">Depositor Leaderboard</div>
+                    <h1 class="page-title">大户排行</h1>
+                    <p class="page-description">
+                        汇总前排存款地址，展示 Validator 规模、活跃状态与总有效余额；点击表头即可切换排序。
+                    </p>
+                    <div class="meta-row">
+                        <span class="meta-pill" id="top-deposits-summary">列表加载中</span>
+                        <span class="meta-pill" id="top-deposits-sort">排序：-</span>
+                        <span class="meta-pill">单位：ACE</span>
+                        <span class="meta-pill">交互：点击表头切换</span>
+                    </div>
                 </div>
-            </div>
-            <div id="top-deposits-table">
-                <div class="loading">加载中...</div>
-            </div>
+                <div class="summary-card">
+                    <div class="summary-label">数据刷新</div>
+                    <div class="summary-value" id="top-deposits-window">实时查询</div>
+                    <div class="summary-subtext">按指定排序字段返回 Top N 结果</div>
+                </div>
+            </section>
+
+            <section class="table-card">
+                <div class="table-toolbar">
+                    <div>
+                        <div class="table-title">存款地址排行榜</div>
+                        <div class="table-subtitle">包含存款额、Validator 状态和有效余额</div>
+                    </div>
+                    <div class="table-note" id="top-deposits-note">加载中...</div>
+                </div>
+                <div id="top-deposits-table">
+                    <div class="loading">加载中...</div>
+                </div>
+            </section>
         </div>
         ${footnotesTopDeposits()}
     `;
@@ -275,9 +321,22 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
         order: params.get('order') === 'asc' ? 'asc' : 'desc',
     };
 
+    const sortLabels = {
+        total_deposit: '总存款金额',
+        validators_total: 'Validator 总数',
+        active: '活跃数量',
+        slashed: '被罚没数量',
+        voluntary_exited: '主动退出数量',
+        total_active_effective_balance: '总有效余额',
+    };
+
+    const resolveSortLabel = (key) => sortLabels[key] || key;
+
     appRoot.innerHTML = topDepositsTemplate();
     const tableContainer = appRoot.querySelector('#top-deposits-table');
-    const subtitle = appRoot.querySelector('#top-deposits-subtitle');
+    const summary = appRoot.querySelector('#top-deposits-summary');
+    const sortMeta = appRoot.querySelector('#top-deposits-sort');
+    const note = appRoot.querySelector('#top-deposits-note');
 
     const setQueryParams = () => {
         const nextUrl = new URL(url.toString());
@@ -360,7 +419,9 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
     };
 
     const fetchTable = async () => {
-        subtitle.textContent = '加载中...';
+        summary.textContent = '列表加载中...';
+        sortMeta.textContent = '排序：-';
+        note.textContent = '正在获取最新排行';
         tableContainer.innerHTML = '<div class="loading">加载中...</div>';
         let response;
         try {
@@ -370,6 +431,9 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
         } catch (err) {
             if (ticket === renderEpoch) {
                 tableContainer.innerHTML = renderError('加载失败，请稍后重试');
+                summary.textContent = '加载失败';
+                sortMeta.textContent = '排序：-';
+                note.textContent = '请求失败，请稍后重试';
             }
             return;
         }
@@ -387,6 +451,9 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
 
         if (!response.ok || !payload) {
             tableContainer.innerHTML = renderError((payload && payload.error) || '加载失败');
+            summary.textContent = '加载失败';
+            sortMeta.textContent = '排序：-';
+            note.textContent = '请求失败，请稍后重试';
             return;
         }
 
@@ -394,7 +461,11 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
         state.sortBy = payload.sort_by || state.sortBy;
         state.order = payload.order === 'asc' ? 'asc' : 'desc';
 
-        subtitle.textContent = `Top ${state.limit} · ${state.sortBy} (${state.order === 'asc' ? '升序' : '降序'})`;
+        const sortLabel = resolveSortLabel(state.sortBy);
+        const orderLabel = state.order === 'asc' ? '升序' : '降序';
+        summary.textContent = `Top ${state.limit} · ${sortLabel}`;
+        sortMeta.textContent = `排序：${sortLabel}（${orderLabel}）`;
+        note.textContent = `当前：Top ${state.limit} · ${sortLabel} · ${orderLabel}`;
         renderTable(payload.results || []);
         setQueryParams();
     };
@@ -420,7 +491,7 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
 
 function networkTemplate() {
     return `
-        <div id="network-rewards-view">
+        <div id="network-rewards-view" class="network-shell">
             <div class="loading">加载中...</div>
         </div>
         ${footnotesNetwork()}
@@ -471,38 +542,78 @@ async function renderNetworkRewards({ ticket }) {
 function renderNetworkStats(current, history) {
     const historyBlock = history.length
         ? `
-            <div class="chart-section">
-                <h2 style="margin-bottom: 1rem;">历史收益趋势</h2>
+            <section class="chart-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">历史收益趋势</h2>
+                    <p class="panel-note">最近 ${history.length} 个窗口</p>
+                </div>
                 <div class="chart-container">
                     <canvas id="rewardsChart"></canvas>
                 </div>
-            </div>
+            </section>
         `
         : '';
 
     return `
-        <div class="current-stats">
-            <div class="stat-box">
-                <h3>最后收益日</h3>
-                <div class="value">${formatTime(current.window_end)}</div>
-                <div class="subvalue">持续时间: ${formatDuration(current.window_duration_seconds)}</div>
+        <section class="network-header">
+            <div class="header-copy">
+                <div class="network-eyebrow">Network Rewards</div>
+                <h1 class="network-title">全网收益</h1>
+                <p class="network-description">
+                    汇总最新统计窗口的收益与运行状况，涵盖共识层与执行层的收益。
+                </p>
+                <div class="network-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">窗口开始</span>
+                        <span class="meta-value">${formatTime(current.window_start)}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">窗口结束</span>
+                        <span class="meta-value">${formatTime(current.window_end)}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">持续时间</span>
+                        <span class="meta-value">${formatDuration(current.window_duration_seconds)}</span>
+                    </div>
+                </div>
             </div>
-            <div class="stat-box" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-                <h3>预估 APR</h3>
-                <div class="value">${Number(current.project_apr_percent || 0).toFixed(3)}%</div>
-                <div class="subvalue">基于最后收益日</div>
+            <div class="window-highlight">
+                <div class="window-label">活跃 Validator 数量</div>
+                <div class="window-value">${formatNumber(current.active_validator_count)}</div>
+                <div class="window-subtext">总有效余额：${formatNumber(formatGweiToAce(current.total_effective_balance_gwei))} ACE</div>
+                <div class="chip">
+                    <span class="chip-dot"></span>
+                    <span>窗口截止：${formatTime(current.window_end)}</span>
+                </div>
             </div>
-            <div class="stat-box" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
-                <h3>总收益 (ACE)</h3>
-                <div class="value">${formatNumber(formatGweiToAce(current.total_rewards_gwei))}</div>
-                <div class="subvalue">CL: ${formatNumber(formatGweiToAce(current.cl_rewards_gwei))} | EL: ${formatNumber(formatGweiToAce(current.el_rewards_gwei))}</div>
-            </div>
-            <div class="stat-box" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
-                <h3>活跃 Validator</h3>
-                <div class="value">${formatNumber(current.active_validator_count)}</div>
-                <div class="subvalue">总有效余额: ${formatNumber(formatGweiToAce(current.total_effective_balance_gwei))} ACE</div>
-            </div>
-        </div>
+        </section>
+
+        <section class="metrics-grid">
+            <article class="metric-card accent">
+                <div class="metric-label">预估 APR</div>
+                <div class="metric-value">${Number(current.project_apr_percent || 0).toFixed(3)}%</div>
+                <div class="metric-subtext">基于最后收益窗口</div>
+            </article>
+            <article class="metric-card">
+                <div class="metric-label">总收益 (ACE)</div>
+                <div class="metric-value">${formatNumber(formatGweiToAce(current.total_rewards_gwei))}</div>
+                <div class="metric-foot">
+                    <span class="pill"><span class="dot"></span>CL: ${formatNumber(formatGweiToAce(current.cl_rewards_gwei))}</span>
+                    <span class="pill" data-variant="warning"><span class="dot"></span>EL: ${formatNumber(formatGweiToAce(current.el_rewards_gwei))}</span>
+                </div>
+            </article>
+            <article class="metric-card">
+                <div class="metric-label">共识层收益</div>
+                <div class="metric-value">${formatNumber(formatGweiToAce(current.cl_rewards_gwei))}</div>
+                <div class="metric-subtext">单位：ACE</div>
+            </article>
+            <article class="metric-card">
+                <div class="metric-label">执行层收益</div>
+                <div class="metric-value">${formatNumber(formatGweiToAce(current.el_rewards_gwei))}</div>
+                <div class="metric-subtext">单位：ACE</div>
+            </article>
+        </section>
+
         ${historyBlock}
     `;
 }
@@ -518,6 +629,21 @@ function renderHistoryChart(history) {
     const totalRewards = sorted.map((h) => Number(h.total_rewards_gwei) / 1e9);
     const aprData = sorted.map((h) => Number(h.project_apr_percent));
 
+    const primary = cssVar('--color-primary') || cssVar('--primary-color');
+    const warning = cssVar('--color-warning') || cssVar('--warning-color');
+    const primaryRgb = cssVar('--color-primary-rgb') || hexToRgb(primary);
+    const warningRgb = cssVar('--color-warning-rgb') || hexToRgb(warning);
+
+    const palette = {
+        primary,
+        primaryFill: primaryRgb ? `rgba(${primaryRgb}, 0.14)` : primary,
+        warning,
+        warningFill: warningRgb ? `rgba(${warningRgb}, 0.16)` : warning,
+        grid: cssVar('--color-border') || cssVar('--border-color'),
+        text: cssVar('--text-secondary') || cssVar('--color-text-muted'),
+        background: cssVar('--card-bg') || cssVar('--color-surface'),
+    };
+
     destroyChart();
     const ctx = canvas.getContext('2d');
     networkChart = new Chart(ctx, {
@@ -528,18 +654,20 @@ function renderHistoryChart(history) {
                 {
                     label: '总收益 (ACE)',
                     data: totalRewards,
-                    borderColor: 'rgb(37, 99, 235)',
-                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    borderColor: palette.primary,
+                    backgroundColor: palette.primaryFill,
                     yAxisID: 'y',
-                    tension: 0.1,
+                    tension: 0.2,
+                    pointRadius: 3,
                 },
                 {
                     label: '预估 APR (%)',
                     data: aprData,
-                    borderColor: 'rgb(245, 158, 11)',
-                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    borderColor: palette.warning,
+                    backgroundColor: palette.warningFill,
                     yAxisID: 'y1',
-                    tension: 0.1,
+                    tension: 0.2,
+                    pointRadius: 3,
                 },
             ],
         },
@@ -551,8 +679,11 @@ function renderHistoryChart(history) {
                 intersect: false,
             },
             plugins: {
-                legend: { position: 'bottom' },
+                legend: { position: 'bottom', labels: { color: palette.text, usePointStyle: true } },
                 tooltip: {
+                    backgroundColor: palette.background,
+                    titleColor: palette.text,
+                    bodyColor: palette.text,
                     callbacks: {
                         label(context) {
                             if (context.datasetIndex === 0) {
@@ -564,18 +695,25 @@ function renderHistoryChart(history) {
                 },
             },
             scales: {
+                x: {
+                    ticks: { color: palette.text },
+                    grid: { color: palette.grid, drawBorder: false },
+                },
                 y: {
                     type: 'linear',
                     display: true,
                     position: 'left',
-                    title: { display: true, text: '总收益 (ACE)' },
+                    title: { display: true, text: '总收益 (ACE)', color: palette.text },
+                    ticks: { color: palette.text },
+                    grid: { color: palette.grid, drawBorder: false },
                 },
                 y1: {
                     type: 'linear',
                     display: true,
                     position: 'right',
-                    title: { display: true, text: '预估 APR (%)' },
-                    grid: { drawOnChartArea: false },
+                    title: { display: true, text: '预估 APR (%)', color: palette.text },
+                    grid: { drawOnChartArea: false, color: palette.grid },
+                    ticks: { color: palette.text },
                 },
             },
         },
@@ -605,7 +743,7 @@ function addressTemplate() {
                            placeholder="0x..." 
                            required
                            pattern="0x[a-fA-F0-9]{40}|0x0[12][a-fA-F0-9]{62}">
-                    <small style="color: var(--text-secondary); display: block; margin-top: 0.25rem;">
+                    <small style="color: var(--text-secondary); display: block; margin-top: var(--space-1);">
                         支持普通地址（0x + 40 字符）或 withdrawal credentials（0x01/0x02 + 64 字符）
                     </small>
                 </div>
@@ -618,7 +756,7 @@ function addressTemplate() {
                 </div>
 
                 <button type="submit" id="submit-btn">查询</button>
-                <span id="loading" style="margin-left: 1rem; display: none;">加载中...</span>
+                <span id="loading" style="margin-left: var(--space-4); display: none;">加载中...</span>
             </form>
         </div>
 
@@ -629,7 +767,7 @@ function addressTemplate() {
 
 function renderAddressResult(data) {
     return `
-        <div class="card" style="margin-top: 1.5rem;">
+        <div class="card" style="margin-top: var(--space-6);">
             <div class="card-header">
                 <h2 class="card-title">查询结果</h2>
             </div>
@@ -640,7 +778,7 @@ function renderAddressResult(data) {
                     <div class="stat-value address address-copy-target" data-address="${data.address}" title="${data.address}" style="font-size: 1rem;">
                         ${formatAddress(data.address)}
                     </div>
-                    ${data.depositor_label ? `<div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">${data.depositor_label}</div>` : ''}
+                    ${data.depositor_label ? `<div style="margin-top: var(--space-2); color: var(--text-secondary); font-size: 0.875rem;">${data.depositor_label}</div>` : ''}
                 </div>
 
                 <div class="stat-card">
@@ -684,12 +822,12 @@ function renderAddressResult(data) {
             </div>
 
             ${data.validator_indices && data.validator_indices.length > 0 ? `
-                <details style="margin-top: 1.5rem;">
-                    <summary style="cursor: pointer; font-weight: 600; padding: 0.5rem; background: var(--bg-color); border-radius: 0.25rem;">
+                <details style="margin-top: var(--space-6);">
+                    <summary style="cursor: pointer; font-weight: 600; padding: var(--space-2); background: var(--bg-color); border-radius: var(--radius-md);">
                         Validator 索引列表 (${data.validator_indices.length} 个)
                     </summary>
-                    <div style="margin-top: 0.5rem; padding: 1rem; background: var(--bg-color); border-radius: 0.25rem; max-height: 300px; overflow-y: auto;">
-                        <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                    <div style="margin-top: var(--space-2); padding: var(--space-4); background: var(--bg-color); border-radius: var(--radius-md); max-height: 300px; overflow-y: auto;">
+                        <div style="display: flex; flex-wrap: wrap; gap: var(--space-2);">
                             ${data.validator_indices.map((idx) => `<span class="badge badge-success">${idx}</span>`).join('')}
                         </div>
                     </div>
