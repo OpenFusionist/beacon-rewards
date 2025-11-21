@@ -601,9 +601,10 @@ func (s *Server) topDepositsPageOrAPIHandler(c *gin.Context) {
 		"order", order)
 
 	data := gin.H{
-		"Limit":  limit,
-		"SortBy": sortBy,
-		"Order":  order,
+		"Limit":       limit,
+		"SortBy":      sortBy,
+		"Order":       order,
+		"CurrentPath": c.Request.URL.Path,
 	}
 
 	c.HTML(http.StatusOK, "top-deposits.html", data)
@@ -716,7 +717,9 @@ func (s *Server) networkRewardsPageOrAPIHandler(c *gin.Context) {
 	}
 
 	slog.Info("Rendering network-rewards.html template", "path", c.Request.URL.Path)
-	c.HTML(http.StatusOK, "network-rewards.html", gin.H{})
+	c.HTML(http.StatusOK, "network-rewards.html", gin.H{
+		"CurrentPath": c.Request.URL.Path,
+	})
 }
 
 func (s *Server) addressRewardsPageHandler(c *gin.Context) {
@@ -740,7 +743,9 @@ func (s *Server) addressRewardsPageHandler(c *gin.Context) {
 	}
 
 	slog.Info("Rendering address-rewards.html template", "path", c.Request.URL.Path)
-	c.HTML(http.StatusOK, "address-rewards.html", gin.H{})
+	c.HTML(http.StatusOK, "address-rewards.html", gin.H{
+		"CurrentPath": c.Request.URL.Path,
+	})
 }
 
 func (s *Server) availableTemplateNames() string {

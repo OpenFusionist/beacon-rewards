@@ -3,20 +3,11 @@
 {{define "title"}}大户排行 - Endurance Rewards{{end}}
 
 {{define "content"}}
-<div class="card">
+<div class="card" data-view="top-deposits">
     <div class="card-header">
         <h1 class="card-title">大户排行</h1>
     </div>
-
-    <div id="table-container" 
-         hx-get="/deposits/top-deposits?limit={{.Limit}}&sort_by={{.SortBy}}&order={{.Order}}" 
-         hx-trigger="load" 
-         hx-target="this" 
-         hx-swap="innerHTML"
-         hx-headers='{"HX-Request": "true"}'
-         data-page="top-deposits">
-        <div class="loading">加载中...</div>
-    </div>
+    <div class="loading">加载中...</div>
 </div>
 
 <div class="footnotes">
@@ -34,105 +25,5 @@
 {{end}}
 
 {{define "scripts"}}
-<script>
-    // Only execute on this page
-    (function() {
-        let copyToastTimer = null;
-
-        function showToast(message) {
-            let toast = document.querySelector('.copy-toast');
-            if (!toast) {
-                toast = document.createElement('div');
-                toast.className = 'copy-toast';
-                document.body.appendChild(toast);
-            }
-            toast.textContent = message;
-            toast.classList.add('show');
-
-            clearTimeout(copyToastTimer);
-            copyToastTimer = setTimeout(() => {
-                toast.classList.remove('show');
-            }, 1600);
-        }
-        // Check if we're on the top-deposits page
-        if (!document.getElementById('table-container')) {
-            return;
-        }
-
-        // Handle sort clicks - scoped to this page only
-        document.addEventListener('click', function(e) {
-            const th = e.target.closest('th.sortable');
-            if (!th || !document.getElementById('table-container')) {
-                return;
-            }
-            
-            e.preventDefault();
-            e.stopPropagation();
-            
-            const sortBy = th.dataset.sortBy;
-            const currentOrder = th.dataset.order || 'asc';
-            const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
-            
-            // Update all th elements
-            document.querySelectorAll('th').forEach(h => {
-                h.classList.remove('sort-asc', 'sort-desc');
-                h.dataset.order = '';
-            });
-            
-            th.classList.add('sort-' + newOrder);
-            th.dataset.order = newOrder;
-            
-            // Trigger HTMX request
-            const limit = {{.Limit}};
-            htmx.ajax('GET', `/deposits/top-deposits?limit=${limit}&sort_by=${sortBy}&order=${newOrder}`, {
-                target: '#table-container',
-                swap: 'innerHTML',
-                headers: {'HX-Request': 'true'}
-            });
-        }, true); // Use capture phase
-
-        function copyAddress(address) {
-            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-                return navigator.clipboard.writeText(address);
-            }
-            return new Promise((resolve, reject) => {
-                const textarea = document.createElement('textarea');
-                textarea.value = address;
-                textarea.style.position = 'fixed';
-                textarea.style.opacity = '0';
-                document.body.appendChild(textarea);
-                textarea.focus();
-                textarea.select();
-                try {
-                    const ok = document.execCommand('copy');
-                    ok ? resolve() : reject(new Error('execCommand copy failed'));
-                } catch (err) {
-                    reject(err);
-                } finally {
-                    document.body.removeChild(textarea);
-                }
-            });
-        }
-
-        // Copy address to clipboard - scoped to this page only
-        document.addEventListener('click', function(e) {
-            const copyTarget = e.target.closest('.address-copy-target');
-            if (!copyTarget || !document.getElementById('table-container')) {
-                return;
-            }
-            e.preventDefault();
-            e.stopPropagation();
-            const address = copyTarget.dataset.address;
-            if (!address) {
-                return;
-            }
-            copyAddress(address)
-                .then(() => showToast('复制成功'))
-                .catch(err => {
-                    console.error('Failed to copy:', err);
-                    showToast('复制失败');
-                });
-        }, true); // Use capture phase
-    })();
-</script>
+{{/* Scripts handled by SPA app.js */}}
 {{end}}
