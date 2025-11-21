@@ -650,6 +650,244 @@ footer {
     border-color: var(--color-rank-third);
 }
 
+/* Network Rewards Layout */
+body[data-current-path^="/rewards/network"] {
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+}
+
+#network-rewards-view {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+}
+
+.network-shell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+}
+
+.network-header {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+    gap: var(--space-4);
+    padding: var(--space-5);
+    background: var(--card-bg);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.network-header .header-copy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.network-eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+}
+
+.network-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.network-description {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    max-width: 60ch;
+}
+
+.network-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--space-3);
+}
+
+.meta-item {
+    padding: var(--space-3);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.meta-label {
+    font-size: 0.8rem;
+    color: var(--text-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.meta-value {
+    font-size: 0.95rem;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+}
+
+.window-highlight {
+    padding: var(--space-4);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-contrast);
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.window-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.window-value {
+    font-size: 1.8rem;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+}
+
+.window-subtext {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-md);
+    border: var(--border-width) solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.chip-dot {
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-primary);
+}
+
+.metrics-grid {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.metric-card {
+    padding: var(--space-4);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--card-bg);
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.metric-card.accent {
+    border-color: var(--color-primary);
+    background: var(--color-surface-muted);
+    box-shadow: var(--shadow-sm);
+}
+
+.metric-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.metric-value {
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+}
+
+.metric-subtext {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.metric-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.pill .dot {
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-primary);
+}
+
+.pill[data-variant="warning"] .dot {
+    background: var(--color-warning);
+}
+
+.chart-panel {
+    padding: var(--space-5);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--card-bg);
+    box-shadow: var(--shadow-sm);
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-3);
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.panel-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.panel-note {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+    .network-header {
+        grid-template-columns: 1fr;
+    }
+
+    .panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
 /* Copy Helpers */
 .address-copy-target {
     display: inline-flex;
