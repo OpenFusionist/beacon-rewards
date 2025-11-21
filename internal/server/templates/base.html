@@ -4,239 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{block "title" .}}Endurance Rewards{{end}}</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script>
-        // Polyfill for crypto.randomUUID in older browsers
-        (function() {
-            if (typeof crypto === 'undefined' || typeof crypto.randomUUID === 'function') {
-                return;
-            }
-            crypto.randomUUID = function() {
-                const bytes = new Uint8Array(16);
-                crypto.getRandomValues(bytes);
-                bytes[6] = (bytes[6] & 0x0f) | 0x40;
-                bytes[8] = (bytes[8] & 0x3f) | 0x80;
-                const toHex = b => b.toString(16).padStart(2, '0');
-                const hex = Array.from(bytes, toHex).join('');
-                return [
-                    hex.slice(0, 8),
-                    hex.slice(8, 12),
-                    hex.slice(12, 16),
-                    hex.slice(16, 20),
-                    hex.slice(20)
-                ].join('-');
-            };
-        })();
-
-        // IMMEDIATE cleanup before HTMX processes anything
-        (function() {
-            // Get current page path immediately
-            const currentPath = window.location.pathname;
-            console.log('Script executing, current path:', currentPath);
-            
-            // Immediately scan and remove any HTMX elements that shouldn't be here
-            function immediateCleanup() {
-                if (currentPath.startsWith('/deposits/top-deposits')) {
-                    return; // Don't clean up on the correct page
-                }
-                
-                // Find all elements with hx-get to top-deposits
-                const hxElements = document.querySelectorAll('[hx-get*="/deposits/top-deposits"]');
-                hxElements.forEach(function(elt) {
-                    console.error('FOUND AND REMOVING HTMX element pointing to top-deposits on wrong page!', {
-                        element: elt,
-                        id: elt.id,
-                        hxGet: elt.getAttribute('hx-get'),
-                        currentPath: currentPath
-                    });
-                    // Remove HTMX attributes
-                    elt.removeAttribute('hx-get');
-                    elt.removeAttribute('hx-trigger');
-                    elt.removeAttribute('hx-target');
-                    elt.removeAttribute('hx-swap');
-                    elt.removeAttribute('hx-headers');
-                });
-                
-                // Find and remove table-container element if it exists
-                const tableContainer = document.getElementById('table-container');
-                if (tableContainer) {
-                    console.error('FOUND AND REMOVING table-container element on wrong page!', {
-                        element: tableContainer,
-                        currentPath: currentPath,
-                        hxGet: tableContainer.getAttribute('hx-get')
-                    });
-                    tableContainer.remove();
-                }
-            }
-            
-            // Run immediately if DOM is ready, otherwise wait
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', immediateCleanup);
-            } else {
-                immediateCleanup();
-            }
-            
-            // Also run after a short delay to catch any dynamically added elements
-            setTimeout(immediateCleanup, 100);
-            setTimeout(immediateCleanup, 500);
-        })();
-        
-        // Disable HTMX auto-boost for all links to prevent unwanted AJAX navigation
-        (function() {
-            // Get current page path immediately
-            const currentPath = window.location.pathname;
-            console.log('Page loaded:', currentPath);
-            
-            // Immediately disable HTMX for elements that shouldn't be on this page
-            // This runs before DOMContentLoaded to catch elements early
-            const pageElements = {
-                '/deposits/top-deposits': ['table-container'],
-                '/rewards/network': ['network-rewards'],
-                '/rewards/by-address': ['result-container']
-            };
-            
-            // Function to clean up HTMX attributes
-            function cleanupHTMX() {
-                Object.keys(pageElements).forEach(function(pagePath) {
-                    if (currentPath !== pagePath) {
-                        pageElements[pagePath].forEach(function(elementId) {
-                            const elt = document.getElementById(elementId);
-                            if (elt) {
-                                console.warn('Removing HTMX attributes from element not on this page:', elementId, 'Current page:', currentPath);
-                                elt.removeAttribute('hx-get');
-                                elt.removeAttribute('hx-post');
-                                elt.removeAttribute('hx-trigger');
-                                elt.removeAttribute('hx-target');
-                                elt.removeAttribute('hx-swap');
-                                elt.removeAttribute('hx-headers');
-                                // Also remove the element if it exists on wrong page
-                                if (currentPath.startsWith('/rewards/') && elementId === 'table-container') {
-                                    console.error('Found table-container on wrong page, removing it!');
-                                    elt.remove();
-                                }
-                            }
-                        });
-                    }
-                });
-            }
-            
-            // Run cleanup immediately and on DOMContentLoaded
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', cleanupHTMX);
-            } else {
-                cleanupHTMX();
-            }
-            
-            document.addEventListener('DOMContentLoaded', function() {
-                // Disable hx-boost globally
-                htmx.config.globalViewTransitions = false;
-                htmx.config.defaultSwapStyle = 'innerHTML';
-                htmx.config.defaultSwapDelay = 0;
-                htmx.config.globalViewCache = false;
-                
-                // Run cleanup again after DOM is loaded
-                cleanupHTMX();
-                
-                // Check for any remaining HTMX elements with hx-get to top-deposits
-                document.querySelectorAll('[hx-get*="/deposits/top-deposits"], [id="table-container"]').forEach(function(elt) {
-                    if (!currentPath.startsWith('/deposits/top-deposits')) {
-                        console.error('Found HTMX element pointing to top-deposits on wrong page! Removing...', {
-                            element: elt,
-                            id: elt.id,
-                            hxGet: elt.getAttribute('hx-get'),
-                            currentPath: currentPath
-                        });
-                        // Remove all HTMX attributes
-                        elt.removeAttribute('hx-get');
-                        elt.removeAttribute('hx-post');
-                        elt.removeAttribute('hx-trigger');
-                        elt.removeAttribute('hx-target');
-                        elt.removeAttribute('hx-swap');
-                        elt.removeAttribute('hx-headers');
-                        // If it's table-container, remove the entire element
-                        if (elt.id === 'table-container') {
-                            console.error('Removing table-container element from wrong page!');
-                            elt.remove();
-                        }
-                    }
-                });
-                
-                // Also disable HTMX processing for any remaining table-container elements
-                if (!currentPath.startsWith('/deposits/top-deposits')) {
-                    const tableContainer = document.getElementById('table-container');
-                    if (tableContainer) {
-                        console.error('CRITICAL: table-container found on wrong page! Removing entire element.');
-                        tableContainer.remove();
-                    }
-                }
-            
-                // Ensure all navigation links use normal page navigation
-                document.querySelectorAll('nav a[href]').forEach(function(link) {
-                    link.setAttribute('hx-boost', 'false');
-                    link.setAttribute('data-hx-boost', 'false');
-                    // Prevent HTMX from intercepting these links
-                    link.addEventListener('click', function(e) {
-                        console.log('Navigation link clicked:', link.href, 'Current path:', currentPath);
-                        // Allow normal navigation
-                        return true;
-                    });
-                });
-                
-                // Debug: Log all HTMX requests with page context
-                document.body.addEventListener('htmx:beforeRequest', function(e) {
-                    const elt = e.detail.elt;
-                    const requestPath = e.detail.path;
-                    const dataPage = elt.getAttribute('data-page');
-                    const elementId = elt.id;
-                    
-                    console.log('HTMX Request triggered:', {
-                        path: requestPath,
-                        elementId: elementId,
-                        dataPage: dataPage,
-                        currentPage: currentPath,
-                        element: elt,
-                        elementHTML: elt.outerHTML.substring(0, 200)
-                    });
-                    
-                    // Block requests that don't match the current page
-                    const pageMapping = {
-                        'top-deposits': '/deposits/top-deposits',
-                        'network-rewards': '/rewards/network'
-                    };
-                    
-                    if (dataPage && pageMapping[dataPage]) {
-                        if (!currentPath.startsWith(pageMapping[dataPage])) {
-                            console.error('BLOCKING HTMX request - wrong page!', {
-                                requestPath: requestPath,
-                                dataPage: dataPage,
-                                expectedPage: pageMapping[dataPage],
-                                currentPath: currentPath
-                            });
-                            e.preventDefault();
-                            return false;
-                        }
-                    }
-                    
-                    // Block requests to top-deposits if we're not on that page
-                    if (requestPath.includes('/deposits/top-deposits') && !currentPath.startsWith('/deposits/top-deposits')) {
-                        console.error('BLOCKING HTMX request to top-deposits from wrong page!', {
-                            requestPath: requestPath,
-                            currentPath: currentPath,
-                            elementId: elementId,
-                            elementHTML: elt.outerHTML.substring(0, 200)
-                        });
-                        e.preventDefault();
-                        return false;
-                    }
-                });
-            });
-        })();
-    </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="/static/css/style.css">
     {{block "head" .}}{{end}}
 </head>
-<body>
+<body data-current-path="{{with .CurrentPath}}{{.}}{{end}}">
     <nav class="navbar">
         <div class="container">
             <a href="/" class="logo">Endurance Rewards</a>
@@ -249,7 +21,9 @@
     </nav>
 
     <main class="container">
-        {{block "content" .}}{{end}}
+        <div id="app-root">
+            {{block "content" .}}{{end}}
+        </div>
     </main>
 
     <footer class="footer">
@@ -258,6 +32,7 @@
         </div>
     </footer>
 
+    <script type="module" src="/static/js/app.js"></script>
     {{block "scripts" .}}{{end}}
 </body>
 </html>
