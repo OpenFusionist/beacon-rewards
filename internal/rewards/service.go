@@ -49,7 +49,7 @@ type ValidatorReward struct {
 	ElRewardsGwei        int64   `json:"el_rewards_gwei"`
 	TotalRewardsGwei     int64   `json:"total_rewards_gwei"`
 	EffectiveBalanceGwei int64   `json:"effective_balance_gwei"`
-	ProjectAPRPercent           float64 `json:"project_apr_percent"`
+	ProjectAPRPercent    float64 `json:"project_apr_percent"`
 }
 
 // Service manages validator reward statistics
@@ -114,7 +114,7 @@ func (s *Service) Start() error {
 	}
 
 	go s.syncRoutine(startEpoch)
-	go s.cacheResetTimer()
+	go s.cacheResetTimerWithClock(time.Now)
 
 	return nil
 }
@@ -292,13 +292,13 @@ func (s *Service) accumulateRewards(validatorIndex uint64, income *types.Validat
 	existing.TxFeeRewardWei = addWei(existing.TxFeeRewardWei, income.TxFeeRewardWei)
 }
 
-func (s *Service) cacheResetTimer() {
+func (s *Service) cacheResetTimerWithClock(now func() time.Time) {
 	loc := time.FixedZone("UTC+8", 8*60*60)
 	for {
-		now := time.Now().In(loc)
+		current := now().In(loc)
 		// Calculate next 00:00 UTC+8
-		nextRun := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, loc)
-		duration := nextRun.Sub(now)
+		nextRun := time.Date(current.Year(), current.Month(), current.Day()+1, 0, 0, 0, 0, loc)
+		duration := nextRun.Sub(current)
 
 		slog.Info("Scheduled next cache reset", "next_run", nextRun, "wait_duration", duration)
 
@@ -308,23 +308,23 @@ func (s *Service) cacheResetTimer() {
 			timer.Stop()
 			return
 		case <-timer.C:
-			s.resetCache()
+			s.resetCacheAt(now())
 		}
 	}
 }
 
-func (s *Service) resetCache() {
+func (s *Service) resetCacheAt(currentTime time.Time) {
 	s.cacheMux.Lock()
 	defer s.cacheMux.Unlock()
 
 	if len(s.cache) > 0 {
-		snapshot := s.computeNetworkSnapshotLocked(time.Now())
+		snapshot := s.computeNetworkSnapshotLocked(currentTime)
 		s.persistSnapshot(snapshot)
 	}
 
 	s.cache = make(map[uint64]*types.ValidatorEpochIncome)
 	// NOTE: We do NOT reset latestSyncEpoch here. It serves as the high-water mark for synchronization.
-	s.setCacheWindowStart(time.Now())
+	s.setCacheWindowStart(currentTime)
 	slog.Info("Cache reset")
 }
 
@@ -434,8 +434,13 @@ func (s *Service) GetRewardWindow() (time.Time, time.Time) {
 	return start, end
 }
 
+// computeNetworkSnapshotLocked aggregates rewards; caller must hold cacheMux.
 func (s *Service) computeNetworkSnapshotLocked(now time.Time) *NetworkRewardSnapshot {
-	start, end := s.GetRewardWindow()
+	start := s.cacheWindowStartTime().UTC()
+	end := utils.EpochToTime(s.latestSyncEpoch)
+	if end.Before(start) {
+		end = start
+	}
 	duration := end.Sub(start)
 	if duration <= 0 {
 		duration = s.config.CacheResetInterval
