@@ -5,7 +5,7 @@ if (!appRoot) {
 
 const navLinks = Array.from(document.querySelectorAll('.nav-links a'));
 let renderEpoch = 0;
-let cleanupCurrentView = () => {};
+let cleanupCurrentView = () => { };
 let networkChart = null;
 
 const routes = [
@@ -58,7 +58,7 @@ function formatDuration(seconds) {
         return `${days}天 ${hours}小时`;
     }
     if (hours > 0) {
-    return `${hours}小时${minutes > 0 ? minutes + '分钟' : ''}`;
+        return `${hours}小时${minutes > 0 ? minutes + '分钟' : ''}`;
     }
     return `${minutes}分钟`;
 }
@@ -204,6 +204,7 @@ function footnotesAddress() {
                 <li><strong>CL 收益</strong>：共识层收益（单位：ACE）</li>
                 <li><strong>EL 收益</strong>：执行层收益（单位：ACE）</li>
                 <li><strong>总收益</strong>：CL 和 EL 收益的总和（单位：ACE）</li>
+                <li><strong>预估历史收益（31天）</strong>：基于全网 APR 估算的过去 31 天收益（单位：ACE）</li>
                 <li><strong>总有效余额</strong>：所有活跃验证者的有效余额总和（单位：ACE）</li>
                 <li><strong>加权平均质押时间</strong>：基于存款金额加权的平均质押时长</li>
                 <li><strong>时间窗口</strong>：当前统计的时间范围</li>
@@ -802,13 +803,18 @@ function renderAddressResult(data) {
                 </div>
 
                 <div class="stat-card">
+                    <div class="stat-label">预估历史收益（31天）</div>
+                    <div class="stat-value">${formatNumber(formatGweiToAce(data.estimated_history_rewards_31d_gwei || 0))} ACE</div>
+                </div>
+
+                <div class="stat-card">
                     <div class="stat-label">总有效余额</div>
                     <div class="stat-value">${formatNumber(formatGweiToAce(data.total_effective_balance_gwei))} ACE</div>
                 </div>
 
                 <div class="stat-card">
                     <div class="stat-label">加权平均质押时间</div>
-                    <div class="stat-value">${formatDuration(data.weighted_average_stake_time)}</div>
+                    <div class="stat-value">${formatDuration(data['weighted_average_stake_time(seconds)'])}</div>
                 </div>
 
                 <div class="stat-card">
