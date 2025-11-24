@@ -334,25 +334,43 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 
 	currentEpoch := utils.TimeToEpoch(time.Now())
 
-	allValidatorIndices, err := s.doraDB.ValidatorIndicesByAddress(ctx, req.Address)
-	if err != nil {
-		if errors.Is(err, dora.ErrInvalidAddress) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		slog.Error("Failed to load validators by address", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load validator index for addresses"})
-		return
-	}
+	// Concurrently fetch validator indices
+	var allValidatorIndices []uint64
+	var activeValidatorIndices []uint64
+	g, gctx := errgroup.WithContext(ctx)
 
-	activeValidatorIndices, err := s.doraDB.ActiveValidatorsIndexByAddress(ctx, req.Address, currentEpoch)
-	if err != nil {
+	g.Go(func() error {
+		var err error
+		allValidatorIndices, err = s.doraDB.ValidatorIndicesByAddress(gctx, req.Address)
+		if err != nil {
+			if errors.Is(err, dora.ErrInvalidAddress) {
+				return err
+			}
+			slog.Error("Failed to load validators by address", "error", err)
+			return err
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		var err error
+		activeValidatorIndices, err = s.doraDB.ActiveValidatorsIndexByAddress(gctx, req.Address, currentEpoch)
+		if err != nil {
+			if errors.Is(err, dora.ErrInvalidAddress) {
+				return err
+			}
+			slog.Error("Failed to load active validators by address", "error", err)
+			return err
+		}
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
 		if errors.Is(err, dora.ErrInvalidAddress) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		slog.Error("Failed to load active validators by address", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load active validator index for addresses"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load validator index for addresses"})
 		return
 	}
 

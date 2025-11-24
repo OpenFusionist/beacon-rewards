@@ -61,7 +61,7 @@ func estimateRecentRewardsForValidators(
 		balance := effectiveBalances[idx]
 		if balance <= 0 {
 			if dep, ok := depositBalances[idx]; ok && dep > 0 {
-				slog.Info("using deposit balance for validator", "validator_index", idx, "deposit_balance", dep)
+				slog.Debug("using deposit balance for validator", "validator_index", idx, "deposit_balance", dep)
 				balance = dep
 			} else {
 				balance = defaultEffectiveBalanceGwei
@@ -70,6 +70,7 @@ func estimateRecentRewardsForValidators(
 
 		activeSeconds := activeSecondsInWindow(lifecycle, currentEpoch, epochsInWindow)
 		if activeSeconds == 0 {
+			slog.Debug("validator is not active in the window", "validator_index", idx)
 			continue
 		}
 
