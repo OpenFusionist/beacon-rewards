@@ -221,6 +221,7 @@ type AddressRewardsResult struct {
 	ElRewardsGwei             int64     `json:"el_rewards_gwei"`
 	TotalRewardsGwei          int64     `json:"total_rewards_gwei"`
 	TotalEffectiveBalanceGwei int64     `json:"total_effective_balance_gwei"`
+	EstimatedRewards31dGwei   float64   `json:"estimated_rewards_31d_gwei"`
 	WeightedAverageStakeTime  int64     `json:"weighted_average_stake_time(seconds)"`
 	WindowStart               time.Time `json:"window_start"`
 	WindowEnd                 time.Time `json:"window_end"`
@@ -332,7 +333,8 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 	}
 
 	currentEpoch := utils.TimeToEpoch(time.Now())
-	validatorIndices, err := s.doraDB.ActiveValidatorsIndexByAddress(ctx, req.Address, currentEpoch)
+
+	allValidatorIndices, err := s.doraDB.ValidatorIndicesByAddress(ctx, req.Address)
 	if err != nil {
 		if errors.Is(err, dora.ErrInvalidAddress) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -343,30 +345,45 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		return
 	}
 
-	// Remove duplicates from validatorIndices
-	//eg.when fetching validator indices by depositor and withdrawal address, returning duplicates whenever the same address funded and withdrew for a validator
-	// very common for solo staker
-	uniqueMap := make(map[uint64]struct{}, len(validatorIndices))
-	uniqueIndices := make([]uint64, 0, len(validatorIndices))
-	for _, idx := range validatorIndices {
-		if _, exists := uniqueMap[idx]; !exists {
-			uniqueMap[idx] = struct{}{}
-			uniqueIndices = append(uniqueIndices, idx)
+	activeValidatorIndices, err := s.doraDB.ActiveValidatorsIndexByAddress(ctx, req.Address, currentEpoch)
+	if err != nil {
+		if errors.Is(err, dora.ErrInvalidAddress) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
+		slog.Error("Failed to load active validators by address", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load active validator index for addresses"})
+		return
 	}
-	validatorIndices = uniqueIndices
+
+	unique := func(indices []uint64) []uint64 {
+		uniqueMap := make(map[uint64]struct{}, len(indices))
+		uniqueIndices := make([]uint64, 0, len(indices))
+		for _, idx := range indices {
+			if _, exists := uniqueMap[idx]; !exists {
+				uniqueMap[idx] = struct{}{}
+				uniqueIndices = append(uniqueIndices, idx)
+			}
+		}
+		return uniqueIndices
+	}
+
+	allValidatorIndices = unique(allValidatorIndices)
+	activeValidatorIndices = unique(activeValidatorIndices)
 
 	var (
 		effectiveBalances    map[uint64]int64
+		depositBalances      map[uint64]int64
 		weightedAvgStakeTime int64
+		lifecycles           map[uint64]dora.ValidatorLifecycle
 	)
 
 	g, gCtx := errgroup.WithContext(ctx)
 
 	// 1. Load effective balances
 	g.Go(func() error {
-		if len(validatorIndices) > 0 {
-			balances, err := s.doraDB.EffectiveBalances(gCtx, validatorIndices)
+		if len(allValidatorIndices) > 0 {
+			balances, err := s.doraDB.EffectiveBalances(gCtx, allValidatorIndices)
 			if err != nil {
 				slog.Error("Failed to load effective balances", "error", err)
 				// Don't fail the request, just log error
@@ -377,10 +394,23 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		return nil
 	})
 
+	// 1b. Load total deposits per validator (fallback for exited validators)
+	g.Go(func() error {
+		if len(allValidatorIndices) > 0 {
+			deposits, err := s.doraDB.DepositAmounts(gCtx, allValidatorIndices)
+			if err != nil {
+				slog.Error("Failed to load deposit amounts", "error", err)
+				return nil
+			}
+			depositBalances = deposits
+		}
+		return nil
+	})
+
 	// 2. Calculate weighted average stake time
 	g.Go(func() error {
-		if len(validatorIndices) > 0 {
-			avg, err := s.doraDB.GetWeightedAverageStakeTime(gCtx, validatorIndices)
+		if len(allValidatorIndices) > 0 {
+			avg, err := s.doraDB.GetWeightedAverageStakeTime(gCtx, allValidatorIndices)
 			if err != nil {
 				slog.Error("Failed to calculate weighted average stake time", "error", err)
 				// Don't fail the request, just log error
@@ -391,16 +421,39 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		return nil
 	})
 
+	// 3. Load validator lifecycles (activation/exit epochs)
+	g.Go(func() error {
+		if len(allValidatorIndices) > 0 {
+			cycles, err := s.doraDB.ValidatorLifecycles(gCtx, allValidatorIndices)
+			if err != nil {
+				slog.Error("Failed to load validator lifecycles", "error", err)
+				return nil
+			}
+			lifecycles = cycles
+		}
+		return nil
+	})
+
 	if err := g.Wait(); err != nil {
 		slog.Error("Error in parallel requests", "error", err)
 	}
 
-	validatorRewards := s.rewardsService.GetTotalRewards(validatorIndices, effectiveBalances)
+	validatorRewards := s.rewardsService.GetTotalRewards(activeValidatorIndices, effectiveBalances)
 	windowStart, windowEnd := s.rewardsService.GetRewardWindow()
+	networkSnapshot := s.rewardsService.TotalNetworkRewards()
+	estimatedRewards := estimateRecentRewardsForValidators(
+		allValidatorIndices,
+		networkSnapshot.ProjectAprPercent,
+		currentEpoch,
+		estimateWindowEpochs(),
+		effectiveBalances,
+		depositBalances,
+		lifecycles,
+	)
 
 	result := AddressRewardsResult{
 		Address:                  req.Address,
-		ActiveValidatorCount:     len(validatorIndices),
+		ActiveValidatorCount:     len(activeValidatorIndices),
 		WindowStart:              windowStart,
 		WindowEnd:                windowEnd,
 		WeightedAverageStakeTime: weightedAvgStakeTime,
@@ -408,7 +461,7 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 	includeIndices := c.Query("include_validator_indices")
 	if includeIndices != "" {
 		if parsed, err := strconv.ParseBool(includeIndices); err == nil && parsed {
-			result.ValidatorIndices = validatorIndices
+			result.ValidatorIndices = allValidatorIndices
 		}
 	}
 
@@ -416,7 +469,7 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		result.DepositorLabel = label
 	}
 
-	for _, idx := range validatorIndices {
+	for _, idx := range activeValidatorIndices {
 		reward, ok := validatorRewards[idx]
 		if !ok {
 			continue
@@ -426,6 +479,7 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		result.TotalRewardsGwei += reward.TotalRewardsGwei
 		result.TotalEffectiveBalanceGwei += reward.EffectiveBalanceGwei
 	}
+	result.EstimatedRewards31dGwei = estimatedRewards
 	c.JSON(http.StatusOK, result)
 
 }

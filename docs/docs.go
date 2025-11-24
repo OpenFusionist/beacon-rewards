@@ -334,6 +334,9 @@ const docTemplate = `{
                 "el_rewards_gwei": {
                     "type": "integer"
                 },
+                "estimated_rewards_31d_gwei": {
+                    "type": "number"
+                },
                 "total_effective_balance_gwei": {
                     "type": "integer"
                 },

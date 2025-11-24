@@ -33,6 +33,8 @@ definitions:
         type: string
       el_rewards_gwei:
         type: integer
+      estimated_rewards_31d_gwei:
+        type: number
       total_effective_balance_gwei:
         type: integer
       total_rewards_gwei:

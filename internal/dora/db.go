@@ -64,12 +64,18 @@ type DepositorStat struct {
 
 // ValidatorStatus captures validator status counts shared by depositor/withdrawal stats.
 type ValidatorStatus struct {
-	TotalDeposit    int64 `json:"total_deposit"`
+	TotalDeposit                int64 `json:"total_deposit"`
 	TotalActiveEffectiveBalance int64 `json:"total_active_effective_balance"`
-	ValidatorsTotal int64 `json:"validators_total"`
-	Slashed         int64 `json:"slashed"`
-	VoluntaryExited int64 `json:"voluntary_exited"`
-	Active          int64 `json:"active"`
+	ValidatorsTotal             int64 `json:"validators_total"`
+	Slashed                     int64 `json:"slashed"`
+	VoluntaryExited             int64 `json:"voluntary_exited"`
+	Active                      int64 `json:"active"`
+}
+
+// ValidatorLifecycle captures the activation and exit epochs for a validator.
+type ValidatorLifecycle struct {
+	ActivationEpoch uint64
+	ExitEpoch       uint64
 }
 
 // TopWithdrawalAddresses aggregates deposits by normalized withdrawal address and returns top N by amount.
@@ -222,6 +228,41 @@ WHERE '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') = lower($1
 	return result, nil
 }
 
+// ValidatorIndicesByAddress returns validator indices funded by the deposit or withdrawal address, regardless of current active status.
+func (d *DB) ValidatorIndicesByAddress(ctx context.Context, addresses string) ([]uint64, error) {
+	if d == nil || d.db == nil {
+		return nil, nil
+	}
+
+	rows, err := d.db.QueryContext(ctx, `
+(SELECT
+  v.validator_index AS validator_index
+FROM deposit_txs dt
+JOIN validators v ON dt.publickey = v.pubkey
+WHERE '0x' || encode(dt.tx_sender,'hex') = lower($1))
+union
+(SELECT
+  v.validator_index AS validator_index
+FROM validators v
+WHERE '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') = lower($1))
+`, addresses)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]uint64, 0)
+	for rows.Next() {
+		var idx int64
+		if err := rows.Scan(&idx); err != nil {
+			return nil, err
+		}
+		result = append(result, uint64(idx))
+	}
+
+	return result, nil
+}
+
 // TODO:optimize EffectiveBalances returns the effective_balance for the requested validator indices.
 func (d *DB) EffectiveBalances(ctx context.Context, indices []uint64) (map[uint64]int64, error) {
 	if d == nil || d.db == nil || len(indices) == 0 {
@@ -263,6 +304,102 @@ WHERE validator_index = ANY($1)
 	}
 
 	return balances, nil
+}
+
+// ValidatorLifecycles returns activation and exit epochs for the requested validator indices.
+func (d *DB) ValidatorLifecycles(ctx context.Context, indices []uint64) (map[uint64]ValidatorLifecycle, error) {
+	if d == nil || d.db == nil || len(indices) == 0 {
+		return map[uint64]ValidatorLifecycle{}, nil
+	}
+
+	unique := make(map[uint64]struct{}, len(indices))
+	ids := make([]int64, 0, len(indices))
+	for _, idx := range indices {
+		if _, exists := unique[idx]; exists {
+			continue
+		}
+		unique[idx] = struct{}{}
+		ids = append(ids, int64(idx))
+	}
+
+	rows, err := d.db.QueryContext(ctx, `
+SELECT validator_index, activation_epoch, exit_epoch
+FROM validators
+WHERE validator_index = ANY($1)
+`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	lifecycles := make(map[uint64]ValidatorLifecycle, len(ids))
+	for rows.Next() {
+		var (
+			idx        int64
+			activation int64
+			exit       int64
+		)
+		if err := rows.Scan(&idx, &activation, &exit); err != nil {
+			return nil, err
+		}
+		lifecycles[uint64(idx)] = ValidatorLifecycle{
+			ActivationEpoch: ConvertInt64ToUint64(activation),
+			ExitEpoch:       ConvertInt64ToUint64(exit),
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return lifecycles, nil
+}
+
+// DepositAmounts returns the total deposited amount per validator index.
+func (d *DB) DepositAmounts(ctx context.Context, indices []uint64) (map[uint64]int64, error) {
+	if d == nil || d.db == nil || len(indices) == 0 {
+		return map[uint64]int64{}, nil
+	}
+
+	unique := make(map[uint64]struct{}, len(indices))
+	ids := make([]int64, 0, len(indices))
+	for _, idx := range indices {
+		if _, exists := unique[idx]; exists {
+			continue
+		}
+		unique[idx] = struct{}{}
+		ids = append(ids, int64(idx))
+	}
+
+	rows, err := d.db.QueryContext(ctx, `
+SELECT v.validator_index, COALESCE(SUM(dt.amount), 0)::bigint AS total_deposit
+FROM validators v
+JOIN deposit_txs dt ON dt.publickey = v.pubkey
+WHERE v.validator_index = ANY($1)
+GROUP BY v.validator_index
+`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	deposits := make(map[uint64]int64, len(ids))
+	for rows.Next() {
+		var (
+			idx     int64
+			deposit int64
+		)
+		if err := rows.Scan(&idx, &deposit); err != nil {
+			return nil, err
+		}
+		deposits[uint64(idx)] = deposit
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return deposits, nil
 }
 
 // ActiveValidatorCount returns the number of validators whose activation/exit epochs indicate an active status.
