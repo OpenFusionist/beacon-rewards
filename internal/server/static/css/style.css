@@ -450,6 +450,17 @@ button:disabled {
     font-family: var(--font-mono);
 }
 
+.stat-subvalue {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.stat-hint {
+    margin-top: var(--space-1);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
 .loading {
     text-align: center;
     padding: var(--space-5);
