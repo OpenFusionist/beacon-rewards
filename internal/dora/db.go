@@ -78,6 +78,15 @@ type ValidatorLifecycle struct {
 	ExitEpoch       uint64
 }
 
+// ValidatorDetail captures lifecycle, balances, and deposit totals for a validator.
+type ValidatorDetail struct {
+	ValidatorIndex   uint64
+	EffectiveBalance int64
+	ActivationEpoch  uint64
+	ExitEpoch        uint64
+	TotalDepositGwei int64
+}
+
 // TopWithdrawalAddresses aggregates deposits by normalized withdrawal address and returns top N by amount.
 //
 // Normalization: for withdrawal credentials with prefix 0x01 or 0x02, the execution-layer address is stored
@@ -353,6 +362,66 @@ WHERE validator_index = ANY($1)
 	}
 
 	return lifecycles, nil
+}
+
+// ValidatorDetailsByAddress returns validator lifecycles, effective balances, and total deposits for an address.
+func (d *DB) ValidatorDetailsByAddress(ctx context.Context, address string) ([]ValidatorDetail, error) {
+	if d == nil || d.db == nil {
+		return nil, nil
+	}
+
+	rows, err := d.db.QueryContext(ctx, `
+WITH addr_validators AS (
+  SELECT v.validator_index, v.effective_balance, v.activation_epoch, v.exit_epoch, v.pubkey
+  FROM validators v
+  WHERE '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') = lower($1)
+  UNION
+  SELECT v.validator_index, v.effective_balance, v.activation_epoch, v.exit_epoch, v.pubkey
+  FROM deposit_txs dt
+  JOIN validators v ON dt.publickey = v.pubkey
+  WHERE '0x' || encode(dt.tx_sender,'hex') = lower($1)
+)
+SELECT
+  av.validator_index,
+  av.effective_balance,
+  av.activation_epoch,
+  av.exit_epoch,
+  COALESCE(SUM(dt.amount), 0)::bigint AS total_deposit
+FROM addr_validators av
+LEFT JOIN deposit_txs dt ON dt.publickey = av.pubkey
+GROUP BY av.validator_index, av.effective_balance, av.activation_epoch, av.exit_epoch
+`, address)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]ValidatorDetail, 0)
+	for rows.Next() {
+		var (
+			idx      int64
+			eff      int64
+			act      int64
+			exit     int64
+			totalDep int64
+		)
+		if err := rows.Scan(&idx, &eff, &act, &exit, &totalDep); err != nil {
+			return nil, err
+		}
+		results = append(results, ValidatorDetail{
+			ValidatorIndex:   uint64(idx),
+			EffectiveBalance: eff,
+			ActivationEpoch:  ConvertInt64ToUint64(act),
+			ExitEpoch:        ConvertInt64ToUint64(exit),
+			TotalDepositGwei: totalDep,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
 }
 
 // DepositAmounts returns the total deposited amount per validator index.

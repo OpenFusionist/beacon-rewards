@@ -11,12 +11,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	"golang.org/x/sync/errgroup"
 )
 
 // @title           Endurance Rewards API
@@ -213,18 +213,18 @@ type AddressRewardsRequest struct {
 
 // AddressRewardsResult captures the aggregated rewards per depositor or withdrawal address.
 type AddressRewardsResult struct {
-	Address                   string    `json:"address"`
-	DepositorLabel            string    `json:"depositor_label,omitempty"`
-	ActiveValidatorCount      int       `json:"active_validator_count"`
-	ValidatorIndices          []uint64  `json:"validator_indices,omitempty"`
-	ClRewardsGwei             int64     `json:"cl_rewards_gwei"`
-	ElRewardsGwei             int64     `json:"el_rewards_gwei"`
-	TotalRewardsGwei          int64     `json:"total_rewards_gwei"`
-	TotalEffectiveBalanceGwei int64     `json:"total_effective_balance_gwei"`
-	EstimatedRewards31dGwei   float64   `json:"estimated_rewards_31d_gwei"`
-	WeightedAverageStakeTime  int64     `json:"weighted_average_stake_time(seconds)"`
-	WindowStart               time.Time `json:"window_start"`
-	WindowEnd                 time.Time `json:"window_end"`
+	Address                        string    `json:"address"`
+	DepositorLabel                 string    `json:"depositor_label,omitempty"`
+	ActiveValidatorCount           int       `json:"active_validator_count"`
+	ValidatorIndices               []uint64  `json:"validator_indices,omitempty"`
+	ClRewardsGwei                  int64     `json:"cl_rewards_gwei"`
+	ElRewardsGwei                  int64     `json:"el_rewards_gwei"`
+	TotalRewardsGwei               int64     `json:"total_rewards_gwei"`
+	TotalEffectiveBalanceGwei      int64     `json:"total_effective_balance_gwei"`
+	EstimatedHistoryRewards31dGwei float64   `json:"estimated_history_rewards_31d_gwei"`
+	WeightedAverageStakeTime       int64     `json:"weighted_average_stake_time(seconds)"`
+	WindowStart                    time.Time `json:"window_start"`
+	WindowEnd                      time.Time `json:"window_end"`
 }
 
 // RewardsResponse
@@ -334,140 +334,86 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 
 	currentEpoch := utils.TimeToEpoch(time.Now())
 
-	// Concurrently fetch validator indices
-	var allValidatorIndices []uint64
-	var activeValidatorIndices []uint64
-	g, gctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		var err error
-		allValidatorIndices, err = s.doraDB.ValidatorIndicesByAddress(gctx, req.Address)
-		if err != nil {
-			if errors.Is(err, dora.ErrInvalidAddress) {
-				return err
-			}
-			slog.Error("Failed to load validators by address", "error", err)
-			return err
-		}
-		return nil
-	})
-
-	g.Go(func() error {
-		var err error
-		activeValidatorIndices, err = s.doraDB.ActiveValidatorsIndexByAddress(gctx, req.Address, currentEpoch)
-		if err != nil {
-			if errors.Is(err, dora.ErrInvalidAddress) {
-				return err
-			}
-			slog.Error("Failed to load active validators by address", "error", err)
-			return err
-		}
-		return nil
-	})
-
-	if err := g.Wait(); err != nil {
+	details, err := s.doraDB.ValidatorDetailsByAddress(ctx, req.Address)
+	if err != nil {
 		if errors.Is(err, dora.ErrInvalidAddress) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load validator index for addresses"})
+		slog.Error("Failed to load validators by address", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load validator details for addresses"})
 		return
 	}
 
-	unique := func(indices []uint64) []uint64 {
-		uniqueMap := make(map[uint64]struct{}, len(indices))
-		uniqueIndices := make([]uint64, 0, len(indices))
-		for _, idx := range indices {
-			if _, exists := uniqueMap[idx]; !exists {
-				uniqueMap[idx] = struct{}{}
-				uniqueIndices = append(uniqueIndices, idx)
-			}
-		}
-		return uniqueIndices
-	}
+	allValidatorIndices := make([]uint64, 0, len(details))
+	activeValidatorIndices := make([]uint64, 0, len(details))
 
-	allValidatorIndices = unique(allValidatorIndices)
-	activeValidatorIndices = unique(activeValidatorIndices)
+	effectiveBalances := make(map[uint64]int64, len(details))
+	depositBalances := make(map[uint64]int64, len(details))
+	lifecycles := make(map[uint64]dora.ValidatorLifecycle, len(details))
+
+	for _, d := range details {
+		idx := d.ValidatorIndex
+		allValidatorIndices = append(allValidatorIndices, idx)
+		if d.EffectiveBalance > 0 {
+			effectiveBalances[idx] = d.EffectiveBalance
+		}
+		if d.TotalDepositGwei > 0 {
+			depositBalances[idx] = d.TotalDepositGwei
+		}
+		lifecycles[idx] = dora.ValidatorLifecycle{
+			ActivationEpoch: d.ActivationEpoch,
+			ExitEpoch:       d.ExitEpoch,
+		}
+		if d.ActivationEpoch <= currentEpoch && d.ExitEpoch > currentEpoch {
+			activeValidatorIndices = append(activeValidatorIndices, idx)
+		}
+	}
 
 	var (
-		effectiveBalances    map[uint64]int64
-		depositBalances      map[uint64]int64
 		weightedAvgStakeTime int64
-		lifecycles           map[uint64]dora.ValidatorLifecycle
+		validatorRewards     map[uint64]*rewards.ValidatorReward
+		windowStart          time.Time
+		windowEnd            time.Time
+		estimatedRewards     float64
 	)
 
-	g, gCtx := errgroup.WithContext(ctx)
+	var wg sync.WaitGroup
+	wg.Add(3)
 
-	// 1. Load effective balances
-	g.Go(func() error {
-		if len(allValidatorIndices) > 0 {
-			balances, err := s.doraDB.EffectiveBalances(gCtx, allValidatorIndices)
-			if err != nil {
-				slog.Error("Failed to load effective balances", "error", err)
-				// Don't fail the request, just log error
-				return nil
-			}
-			effectiveBalances = balances
+	go func() {
+		defer wg.Done()
+		if len(allValidatorIndices) == 0 {
+			return
 		}
-		return nil
-	})
-
-	// 1b. Load total deposits per validator (fallback for exited validators)
-	g.Go(func() error {
-		if len(allValidatorIndices) > 0 {
-			deposits, err := s.doraDB.DepositAmounts(gCtx, allValidatorIndices)
-			if err != nil {
-				slog.Error("Failed to load deposit amounts", "error", err)
-				return nil
-			}
-			depositBalances = deposits
-		}
-		return nil
-	})
-
-	// 2. Calculate weighted average stake time
-	g.Go(func() error {
-		if len(allValidatorIndices) > 0 {
-			avg, err := s.doraDB.GetWeightedAverageStakeTime(gCtx, allValidatorIndices)
-			if err != nil {
-				slog.Error("Failed to calculate weighted average stake time", "error", err)
-				// Don't fail the request, just log error
-				return nil
-			}
+		if avg, err := s.doraDB.GetWeightedAverageStakeTime(ctx, allValidatorIndices); err == nil {
 			weightedAvgStakeTime = avg
+		} else {
+			slog.Error("Failed to calculate weighted average stake time", "error", err)
 		}
-		return nil
-	})
+	}()
 
-	// 3. Load validator lifecycles (activation/exit epochs)
-	g.Go(func() error {
-		if len(allValidatorIndices) > 0 {
-			cycles, err := s.doraDB.ValidatorLifecycles(gCtx, allValidatorIndices)
-			if err != nil {
-				slog.Error("Failed to load validator lifecycles", "error", err)
-				return nil
-			}
-			lifecycles = cycles
-		}
-		return nil
-	})
+	go func() {
+		defer wg.Done()
+		validatorRewards = s.rewardsService.GetTotalRewards(activeValidatorIndices, effectiveBalances)
+		windowStart, windowEnd = s.rewardsService.GetRewardWindow()
+	}()
 
-	if err := g.Wait(); err != nil {
-		slog.Error("Error in parallel requests", "error", err)
-	}
+	go func() {
+		defer wg.Done()
+		networkSnapshot := s.rewardsService.TotalNetworkRewards()
+		estimatedRewards = estimateRecentRewardsForValidators(
+			allValidatorIndices,
+			networkSnapshot.ProjectAprPercent,
+			currentEpoch,
+			estimateWindowEpochs(),
+			effectiveBalances,
+			depositBalances,
+			lifecycles,
+		)
+	}()
 
-	validatorRewards := s.rewardsService.GetTotalRewards(activeValidatorIndices, effectiveBalances)
-	windowStart, windowEnd := s.rewardsService.GetRewardWindow()
-	networkSnapshot := s.rewardsService.TotalNetworkRewards()
-	estimatedRewards := estimateRecentRewardsForValidators(
-		allValidatorIndices,
-		networkSnapshot.ProjectAprPercent,
-		currentEpoch,
-		estimateWindowEpochs(),
-		effectiveBalances,
-		depositBalances,
-		lifecycles,
-	)
+	wg.Wait()
 
 	result := AddressRewardsResult{
 		Address:                  req.Address,
@@ -497,7 +443,7 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		result.TotalRewardsGwei += reward.TotalRewardsGwei
 		result.TotalEffectiveBalanceGwei += reward.EffectiveBalanceGwei
 	}
-	result.EstimatedRewards31dGwei = estimatedRewards
+	result.EstimatedHistoryRewards31dGwei = estimatedRewards
 	c.JSON(http.StatusOK, result)
 
 }
