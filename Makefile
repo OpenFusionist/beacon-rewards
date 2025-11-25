@@ -1,4 +1,4 @@
-.PHONY: build run clean test lint deps
+.PHONY: build run clean test lint deps docker-build docker-run
 
 include .env
 
@@ -28,3 +28,22 @@ deps:
 	go mod download
 	go mod tidy
 
+# Build Docker image
+docker-build:
+	docker build -t endurance-rewards:latest .
+
+# Build and run Docker container
+docker-run: docker-build
+	docker run -p 8080:8080 --env-file $(CURDIR)/.env -v $(CURDIR)/data:/app/data --restart=unless-stopped --name endurance-rewards -d endurance-rewards
+
+docker-stop:
+	docker stop endurance-rewards
+
+docker-remove: docker-stop
+	docker rm endurance-rewards
+
+docker-logs:
+	docker logs -f endurance-rewards --tail 100
+
+docker-exec:
+	docker exec -it endurance-rewards /bin/sh

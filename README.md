@@ -33,6 +33,7 @@ Or with Docker:
 ```bash
 docker build -t endurance-rewards .
 docker run -p 8080:8080 --env-file .env endurance-rewards
+docker run -p 8080:8080   --env-file $(pwd)/.env   -v $(pwd)/data:/app/data   --restart=unless-stopped   --name endurance-rewards   -d   endurance-rewards
 ```
 
 ## Configuration
