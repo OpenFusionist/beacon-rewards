@@ -283,7 +283,7 @@ function topDepositsTemplate() {
                 <div class="table-toolbar">
                     <div>
                         <div class="table-title">Depositor leaderboard</div>
-                        <div class="table-subtitle">Includes deposit total, validator status, and effective balance</div>
+                        <div class="table-subtitle">Includes withdrawal address, deposit total, validator status, and effective balance</div>
                     </div>
                     <div class="table-note" id="top-deposits-note">Loading...</div>
                 </div>
@@ -306,6 +306,7 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
 
     const sortLabels = {
         total_deposit: 'Total deposit',
+        withdrawal_address: 'Withdrawal address',
         validators_total: 'Validators funded',
         active: 'Active validators',
         slashed: 'Slashed validators',
@@ -356,6 +357,13 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
                             <span class="address">${formatAddress(item.depositor_address)}</span>
                         </div>
                     </td>
+                    <td>
+                        ${item.withdrawal_address ? `
+                            <div class="address-with-copy address-copy-target" data-address="${item.withdrawal_address}" title="${item.withdrawal_address}">
+                                <span class="address">${formatAddress(item.withdrawal_address)}</span>
+                            </div>
+                        ` : '-'}
+                    </td>
                     <td>${item.depositor_label || '-'}</td>
                     <td>${formatGweiToAce(item.total_deposit)}</td>
                     <td>${formatNumber(item.validators_total)}</td>
@@ -373,18 +381,20 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
                     <colgroup>
                         <col class="col-rank">
                         <col class="col-address">
+                        <col class="col-withdrawal">
                         <col class="col-label">
                         <col class="col-total-deposit">
                         <col class="col-validators">
                         <col class="col-active">
                         <col class="col-slashed">
                         <col class="col-voluntary">
-                    <col class="col-effective-balance">
-                </colgroup>
+                        <col class="col-effective-balance">
+                    </colgroup>
                 <thead>
                     <tr>
                         <th><abbr class="header-abbr" data-tooltip="Ranking" aria-label="Ranking position">Rank</abbr></th>
                         <th><abbr class="header-abbr" data-tooltip="Depositor address" aria-label="Depositor address">Addr</abbr></th>
+                        <th><abbr class="header-abbr" data-tooltip="Withdrawal address" aria-label="Withdrawal address">Wdr</abbr></th>
                         <th><abbr class="header-abbr" data-tooltip="Label for the address" aria-label="Label for the address">Label</abbr></th>
                         <th class="sortable" data-sort="total_deposit"><abbr class="header-abbr" data-tooltip="Total deposit amount (ACE)" aria-label="Total deposit amount (ACE)">Total deposited</abbr></th>
                         <th class="sortable" data-sort="validators_total"><abbr class="header-abbr" data-tooltip="Total Number of validators" aria-label="Total Number of validators">Tot</abbr></th>
@@ -764,9 +774,23 @@ function renderAddressResult(data) {
                     ${data.depositor_label ? `<div style="margin-top: var(--space-2); color: var(--text-secondary); font-size: 0.875rem;">${data.depositor_label}</div>` : ''}
                 </div>
 
+                <div class="stat-card stat-card-accent">
+                    <div class="stat-label">Window</div>
+                    <div class="stat-value" style="font-size: 0.9rem; line-height: 1.5;">
+                        ${formatTime(data.window_start)}<br>
+                        to<br>
+                        ${formatTime(data.window_end)}
+                    </div>
+                </div>
+
                 <div class="stat-card">
                     <div class="stat-label">Active validators</div>
                     <div class="stat-value">${formatNumber(data.active_validator_count)}</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Total effective balance</div>
+                    <div class="stat-value">${formatNumber(formatGweiToAce(data.total_effective_balance_gwei))} ACE</div>
                 </div>
 
                 <div class="stat-card">
@@ -790,22 +814,8 @@ function renderAddressResult(data) {
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-label">Total effective balance</div>
-                    <div class="stat-value">${formatNumber(formatGweiToAce(data.total_effective_balance_gwei))} ACE</div>
-                </div>
-
-                <div class="stat-card">
                     <div class="stat-label">Weighted average stake time</div>
                     <div class="stat-value">${formatDuration(data['weighted_average_stake_time(seconds)'])}</div>
-                </div>
-
-                <div class="stat-card">
-                    <div class="stat-label">Window</div>
-                    <div class="stat-value" style="font-size: 0.875rem;">
-                        ${formatTime(data.window_start)}<br>
-                        to<br>
-                        ${formatTime(data.window_end)}
-                    </div>
                 </div>
             </div>
 

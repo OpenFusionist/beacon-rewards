@@ -24,7 +24,7 @@
                     {
                         "type": "string",
                         "default": "total_deposit",
-                        "description": "Sort field (total_deposit,depositor_address,validators_total, slashed, voluntary_exited, active, total_active_effective_balance)",
+                        "description": "Sort field (total_deposit,depositor_address,withdrawal_address,validators_total, slashed, voluntary_exited, active, total_active_effective_balance)",
                         "name": "sort_by",
                         "in": "query"
                     },

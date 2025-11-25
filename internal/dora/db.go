@@ -57,8 +57,9 @@ type WithdrawalStat struct {
 
 // DepositorStat represents aggregated deposits for the depositor (tx sender) address.
 type DepositorStat struct {
-	DepositorAddress string `json:"depositor_address"`
-	DepositorLabel   string `json:"depositor_label,omitempty"`
+	DepositorAddress  string `json:"depositor_address"`
+	DepositorLabel    string `json:"depositor_label,omitempty"`
+	WithdrawalAddress string `json:"withdrawal_address"`
 	ValidatorStatus
 }
 
@@ -125,16 +126,27 @@ LIMIT $1`
 // TopDepositorAddresses aggregates deposits by transaction sender and returns top N by validator count.
 func (d *DB) TopDepositorAddresses(ctx context.Context, limit int, sortBy string, order string) ([]DepositorStat, error) {
 	const baseQuery = `
+WITH depositor_data AS (
+  SELECT
+    '0x' || encode(dt.tx_sender, 'hex') AS depositor_address,
+    '0x' || encode(substr(COALESCE(v.withdrawal_credentials, dt.withdrawalcredentials), 13, 20), 'hex') AS withdrawal_address,
+    dt.amount,
+    v.effective_balance,
+    v.validator_index,
+    v.slashed
+  FROM deposit_txs dt
+  LEFT JOIN validators v ON dt.publickey = v.pubkey
+)
 SELECT
-  '0x' || encode(dt.tx_sender,'hex') as depositor_address,
-  SUM(dt.amount)::bigint AS total_deposit,
-  COALESCE(SUM(v.effective_balance) FILTER (WHERE NOT v.slashed AND v.effective_balance > 0), 0)::bigint AS total_active_effective_balance,
-  COUNT(DISTINCT v.validator_index) AS validators_total,
-  COUNT(DISTINCT v.validator_index) FILTER (WHERE v.slashed) AS slashed,
-  COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance = 0) AS voluntary_exited,
-  COUNT(DISTINCT v.validator_index) FILTER (WHERE NOT v.slashed AND v.effective_balance > 0) AS active
-FROM deposit_txs dt 
-LEFT JOIN validators v ON dt.publickey = v.pubkey 
+  depositor_address,
+  mode() WITHIN GROUP (ORDER BY withdrawal_address) AS withdrawal_address,
+  SUM(amount)::bigint AS total_deposit,
+  COALESCE(SUM(effective_balance) FILTER (WHERE NOT slashed AND effective_balance > 0), 0)::bigint AS total_active_effective_balance,
+  COUNT(DISTINCT validator_index) AS validators_total,
+  COUNT(DISTINCT validator_index) FILTER (WHERE slashed) AS slashed,
+  COUNT(DISTINCT validator_index) FILTER (WHERE NOT slashed AND effective_balance = 0) AS voluntary_exited,
+  COUNT(DISTINCT validator_index) FILTER (WHERE NOT slashed AND effective_balance > 0) AS active
+FROM depositor_data
 GROUP BY depositor_address
 ORDER BY %s %s
 LIMIT $1`
@@ -144,6 +156,7 @@ LIMIT $1`
 	return queryStats(ctx, d.db, limit, q, func(rows *sql.Rows, stat *DepositorStat) error {
 		return rows.Scan(
 			&stat.DepositorAddress,
+			&stat.WithdrawalAddress,
 			&stat.TotalDeposit,
 			&stat.TotalActiveEffectiveBalance,
 			&stat.ValidatorsTotal,
