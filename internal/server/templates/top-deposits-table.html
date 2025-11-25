@@ -4,6 +4,7 @@
         <colgroup>
             <col class="col-rank">
             <col class="col-address">
+            <col class="col-withdrawal">
             <col class="col-label">
             <col class="col-total-deposit">
             <col class="col-validators">
@@ -16,6 +17,7 @@
             <tr>
                 <th><abbr class="header-abbr" data-tooltip="Ranking position" aria-label="Ranking position">Rank</abbr></th>
                 <th><abbr class="header-abbr" data-tooltip="Depositor address" aria-label="Depositor address">Addr</abbr></th>
+                <th><abbr class="header-abbr" data-tooltip="Withdrawal address (derived from credentials)" aria-label="Withdrawal address">Wdr</abbr></th>
                 <th><abbr class="header-abbr" data-tooltip="Optional label for the depositor" aria-label="Optional label for the depositor">Label</abbr></th>
                 <th class="sortable" data-sort-by="total_deposit" data-order="{{if eq .sort_by "total_deposit"}}{{.order}}{{end}}">
                     <abbr class="header-abbr" data-tooltip="Total deposit amount (ACE)" aria-label="Total deposit amount (ACE)">Dep</abbr>
@@ -57,6 +59,15 @@
                             {{formatAddress $item.depositor_address}}
                         </span>
                     </div>
+                </td>
+                <td>
+                    {{if $item.withdrawal_address}}
+                    <div class="address-with-copy address-copy-target" data-address="{{$item.withdrawal_address}}" title="{{$item.withdrawal_address}}">
+                        <span class="address" title="{{$item.withdrawal_address}}">
+                            {{formatAddress $item.withdrawal_address}}
+                        </span>
+                    </div>
+                    {{else}}-{{end}}
                 </td>
                 <td>{{if $item.depositor_label}}{{$item.depositor_label}}{{else}}-{{end}}</td>
                 <td>{{formatGweiToAce $item.total_deposit}}</td>
