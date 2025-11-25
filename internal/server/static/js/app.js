@@ -41,12 +41,12 @@ function formatNumber(num) {
     if (Number.isNaN(parsed)) {
         return '0';
     }
-    return new Intl.NumberFormat('zh-CN').format(parsed);
+    return new Intl.NumberFormat('en-US').format(parsed);
 }
 
 function formatTime(value) {
     if (!value) return '';
-    return new Date(value).toLocaleString('zh-CN', { timeZone: 'UTC' }) + ' UTC';
+    return new Date(value).toLocaleString('en-US', { timeZone: 'UTC' }) + ' UTC';
 }
 
 function formatDuration(seconds) {
@@ -55,12 +55,12 @@ function formatDuration(seconds) {
     const hours = Math.floor((secs % 86400) / 3600);
     const minutes = Math.floor((secs % 3600) / 60);
     if (days > 0) {
-        return `${days}天 ${hours}小时`;
+        return `${days}d ${hours}h`;
     }
     if (hours > 0) {
-        return `${hours}小时${minutes > 0 ? minutes + '分钟' : ''}`;
+        return `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`;
     }
-    return `${minutes}分钟`;
+    return `${minutes}m`;
 }
 
 function cssVar(name, fallback = '') {
@@ -160,34 +160,21 @@ function renderError(message) {
 }
 
 function footnotesTopDeposits() {
-    return `
-        <div class="footnotes">
-            <h3>字段说明</h3>
-            <ol>
-                <li><strong>存款地址</strong>：向存款合约发送交易的地址</li>
-                <li><strong>总存款金额</strong>：该地址向存款合约发送的总金额（单位：ACE）</li>
-                <li><strong>Validator 总数</strong>：该地址资助的验证者总数</li>
-                <li><strong>活跃数量</strong>：当前处于活跃状态的验证者数量（未被罚没且有效余额大于0）</li>
-                <li><strong>被罚没数量</strong>：因违规行为被罚没的验证者数量</li>
-                <li><strong>主动退出数量</strong>：主动退出且有效余额为0的验证者数量</li>
-                <li><strong>总有效余额</strong>：所有活跃验证者的有效余额总和（单位：ACE）</li>
-            </ol>
-        </div>
-    `;
+    return '';
 }
 
 function footnotesNetwork() {
     return `
         <div class="footnotes">
-            <h3>字段说明</h3>
+            <h3>Field reference</h3>
             <ol>
-                <li><strong>时间窗口</strong>：当前统计的时间范围（从窗口开始到窗口结束）</li>
-                <li><strong>活跃 Validator 数量</strong>：当前处于活跃状态的验证者总数</li>
-                <li><strong>CL 收益</strong>：共识层收益（单位：ACE）</li>
-                <li><strong>EL 收益</strong>：执行层收益（单位：ACE）</li>
-                <li><strong>总收益</strong>：CL 收益和 EL 收益的总和（单位：ACE）</li>
-                <li><strong>总有效余额</strong>：所有活跃验证者的有效余额总和（单位：ACE）</li>
-                <li><strong>预估 APR</strong>：基于当前窗口收益计算的年化收益率（百分比）</li>
+                <li><strong>Window</strong>: Reporting window used (start to end)</li>
+                <li><strong>Active validator count</strong>: Total validators currently active</li>
+                <li><strong>CL rewards</strong>: Consensus layer rewards (ACE)</li>
+                <li><strong>EL rewards</strong>: Execution layer rewards (ACE)</li>
+                <li><strong>Total rewards</strong>: Sum of CL and EL rewards (ACE)</li>
+                <li><strong>Total effective balance</strong>: Effective balance across all active validators (ACE)</li>
+                <li><strong>Projected APR</strong>: Annualized rate based on the current window rewards (%)</li>
             </ol>
         </div>
     `;
@@ -196,18 +183,18 @@ function footnotesNetwork() {
 function footnotesAddress() {
     return `
         <div class="footnotes">
-            <h3>字段说明</h3>
+            <h3>Field reference</h3>
             <ol>
-                <li><strong>地址</strong>：查询的存款地址或提款地址</li>
-                <li><strong>活跃 Validator 数量</strong>：该地址资助的当前处于活跃状态的验证者数量</li>
-                <li><strong>Validator 索引列表</strong>：该地址资助的所有活跃验证者的索引号（可选显示）</li>
-                <li><strong>CL 收益</strong>：共识层收益（单位：ACE）</li>
-                <li><strong>EL 收益</strong>：执行层收益（单位：ACE）</li>
-                <li><strong>总收益</strong>：CL 和 EL 收益的总和（单位：ACE）</li>
-                <li><strong>预估历史收益（31天）</strong>：基于全网 APR 估算的过去 31 天收益（单位：ACE）</li>
-                <li><strong>总有效余额</strong>：所有活跃验证者的有效余额总和（单位：ACE）</li>
-                <li><strong>加权平均质押时间</strong>：基于存款金额加权的平均质押时长</li>
-                <li><strong>时间窗口</strong>：当前统计的时间范围</li>
+                <li><strong>Address</strong>: Deposit or withdrawal address being queried</li>
+                <li><strong>Active validators</strong>: Number of validators funded by this address that are currently active</li>
+                <li><strong>Validator indices</strong>: Index numbers of all active validators funded by this address (optional)</li>
+                <li><strong>CL rewards</strong>: Consensus layer rewards (ACE)</li>
+                <li><strong>EL rewards</strong>: Execution layer rewards (ACE)</li>
+                <li><strong>Total rewards</strong>: Sum of CL and EL rewards (ACE)</li>
+                <li><strong>Estimated 31d rewards</strong>: Estimated rewards for the past 31 days based on network APR (ACE)</li>
+                <li><strong>Total effective balance</strong>: Sum of effective balances for all active validators (ACE)</li>
+                <li><strong>Weighted average stake time</strong>: Average staking duration weighted by deposit amount</li>
+                <li><strong>Window</strong>: Reporting window used for the calculation</li>
             </ol>
         </div>
     `;
@@ -248,7 +235,7 @@ async function navigate(urlString, options = {}) {
         teardown = await route.render({ url, ticket, cleaner });
     } catch (err) {
         console.error('Failed to render route', err);
-        appRoot.innerHTML = renderError('页面渲染失败，请重试');
+        appRoot.innerHTML = renderError('Render failed, please retry.');
     }
     if (typeof teardown === 'function') {
         cleanupCurrentView = () => {
@@ -268,8 +255,8 @@ function runCopyHandler() {
         if (!address) return;
 
         copyText(address)
-            .then(() => toast.show('复制成功'))
-            .catch(() => toast.show('复制失败'));
+            .then(() => toast.show('Copied'))
+            .catch(() => toast.show('Copy failed'));
     });
 }
 
@@ -279,34 +266,29 @@ function topDepositsTemplate() {
             <section class="page-header">
                 <div>
                     <div class="page-eyebrow">Depositor Leaderboard</div>
-                    <h1 class="page-title">大户排行</h1>
+                    <h1 class="page-title">Top Depositors</h1>
                     <p class="page-description">
-                        汇总前排存款地址，展示 Validator 规模、活跃状态与总有效余额；点击表头即可切换排序。
+                        Aggregates leading deposit addresses with validator scale, activity, and effective balance. Click any header to change the sort.
                     </p>
                     <div class="meta-row">
-                        <span class="meta-pill" id="top-deposits-summary">列表加载中</span>
-                        <span class="meta-pill" id="top-deposits-sort">排序：-</span>
-                        <span class="meta-pill">单位：ACE</span>
-                        <span class="meta-pill">交互：点击表头切换</span>
+                        <span class="meta-pill" id="top-deposits-summary">Loading leaderboard</span>
+                        <span class="meta-pill" id="top-deposits-sort">Sort: -</span>
+                        <span class="meta-pill">Unit: ACE</span>
+                        <span class="meta-pill">Tip: Click headers to sort</span>
                     </div>
-                </div>
-                <div class="summary-card">
-                    <div class="summary-label">数据刷新</div>
-                    <div class="summary-value" id="top-deposits-window">实时查询</div>
-                    <div class="summary-subtext">按指定排序字段返回 Top N 结果</div>
                 </div>
             </section>
 
             <section class="table-card">
                 <div class="table-toolbar">
                     <div>
-                        <div class="table-title">存款地址排行榜</div>
-                        <div class="table-subtitle">包含存款额、Validator 状态和有效余额</div>
+                        <div class="table-title">Depositor leaderboard</div>
+                        <div class="table-subtitle">Includes deposit total, validator status, and effective balance</div>
                     </div>
-                    <div class="table-note" id="top-deposits-note">加载中...</div>
+                    <div class="table-note" id="top-deposits-note">Loading...</div>
                 </div>
                 <div id="top-deposits-table">
-                    <div class="loading">加载中...</div>
+                    <div class="loading">Loading...</div>
                 </div>
             </section>
         </div>
@@ -317,18 +299,18 @@ function topDepositsTemplate() {
 async function renderTopDeposits({ url, ticket, cleaner }) {
     const params = url.searchParams;
     const state = {
-        limit: Math.max(1, Number(params.get('limit')) || 100),
+        limit: Math.max(1, Number(params.get('limit')) || 30),
         sortBy: params.get('sort_by') || 'total_deposit',
         order: params.get('order') === 'asc' ? 'asc' : 'desc',
     };
 
     const sortLabels = {
-        total_deposit: '总存款金额',
-        validators_total: 'Validator 总数',
-        active: '活跃数量',
-        slashed: '被罚没数量',
-        voluntary_exited: '主动退出数量',
-        total_active_effective_balance: '总有效余额',
+        total_deposit: 'Total deposit',
+        validators_total: 'Validators funded',
+        active: 'Active validators',
+        slashed: 'Slashed validators',
+        voluntary_exited: 'Voluntary exits',
+        total_active_effective_balance: 'Total effective balance',
     };
 
     const resolveSortLabel = (key) => sortLabels[key] || key;
@@ -360,7 +342,7 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
 
     const renderTable = (results) => {
         if (!Array.isArray(results) || results.length === 0) {
-            tableContainer.innerHTML = '<div class="empty">暂无数据</div>';
+            tableContainer.innerHTML = '<div class="empty">No data available</div>';
             return;
         }
 
@@ -397,33 +379,33 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
                         <col class="col-active">
                         <col class="col-slashed">
                         <col class="col-voluntary">
-                        <col class="col-effective-balance">
-                    </colgroup>
-                    <thead>
-                        <tr>
-                            <th>排名</th>
-                            <th>存款地址</th>
-                            <th>标签</th>
-                            <th class="sortable" data-sort="total_deposit">总存款金额 (ACE)</th>
-                            <th class="sortable" data-sort="validators_total">Validator 总数</th>
-                            <th class="sortable" data-sort="active">活跃数量</th>
-                            <th class="sortable" data-sort="slashed">被罚没数量</th>
-                            <th class="sortable" data-sort="voluntary_exited">主动退出数量</th>
-                            <th class="sortable" data-sort="total_active_effective_balance">总有效余额 (ACE)</th>
-                        </tr>
-                    </thead>
-                    <tbody>${rows}</tbody>
-                </table>
-            </div>
+                    <col class="col-effective-balance">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th><abbr class="header-abbr" data-tooltip="Ranking" aria-label="Ranking position">Rank</abbr></th>
+                        <th><abbr class="header-abbr" data-tooltip="Depositor address" aria-label="Depositor address">Addr</abbr></th>
+                        <th><abbr class="header-abbr" data-tooltip="Label for the address" aria-label="Label for the address">Label</abbr></th>
+                        <th class="sortable" data-sort="total_deposit"><abbr class="header-abbr" data-tooltip="Total deposit amount (ACE)" aria-label="Total deposit amount (ACE)">Total deposited</abbr></th>
+                        <th class="sortable" data-sort="validators_total"><abbr class="header-abbr" data-tooltip="Total Number of validators" aria-label="Total Number of validators">Tot</abbr></th>
+                        <th class="sortable" data-sort="active"><abbr class="header-abbr" data-tooltip="Active validators" aria-label="Active validators">Act</abbr></th>
+                        <th class="sortable" data-sort="slashed"><abbr class="header-abbr" data-tooltip="Number of slashed validators" aria-label="Number of slashed validators">Sla</abbr></th>
+                        <th class="sortable" data-sort="voluntary_exited"><abbr class="header-abbr" data-tooltip="Number of voluntarily exited validators" aria-label="Number of voluntarily exited validators">Ex</abbr></th>
+                        <th class="sortable" data-sort="total_active_effective_balance"><abbr class="header-abbr" data-tooltip="Total effective balance (ACE)" aria-label="Total effective balance (ACE)">Total EB</abbr></th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
         `;
         updateSortIndicators();
     };
 
     const fetchTable = async () => {
-        summary.textContent = '列表加载中...';
-        sortMeta.textContent = '排序：-';
-        note.textContent = '正在获取最新排行';
-        tableContainer.innerHTML = '<div class="loading">加载中...</div>';
+        summary.textContent = 'Loading leaderboard...';
+        sortMeta.textContent = 'Sort: -';
+        note.textContent = 'Fetching the latest results';
+        tableContainer.innerHTML = '<div class="loading">Loading...</div>';
         let response;
         try {
             response = await fetch(`/deposits/top-deposits?limit=${state.limit}&sort_by=${state.sortBy}&order=${state.order}`, {
@@ -431,10 +413,10 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
             });
         } catch (err) {
             if (ticket === renderEpoch) {
-                tableContainer.innerHTML = renderError('加载失败，请稍后重试');
-                summary.textContent = '加载失败';
-                sortMeta.textContent = '排序：-';
-                note.textContent = '请求失败，请稍后重试';
+                tableContainer.innerHTML = renderError('Failed to load, please try again.');
+                summary.textContent = 'Load failed';
+                sortMeta.textContent = 'Sort: -';
+                note.textContent = 'Request failed, please try again.';
             }
             return;
         }
@@ -451,10 +433,10 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
         }
 
         if (!response.ok || !payload) {
-            tableContainer.innerHTML = renderError((payload && payload.error) || '加载失败');
-            summary.textContent = '加载失败';
-            sortMeta.textContent = '排序：-';
-            note.textContent = '请求失败，请稍后重试';
+            tableContainer.innerHTML = renderError((payload && payload.error) || 'Failed to load');
+            summary.textContent = 'Load failed';
+            sortMeta.textContent = 'Sort: -';
+            note.textContent = 'Request failed, please try again.';
             return;
         }
 
@@ -463,10 +445,10 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
         state.order = payload.order === 'asc' ? 'asc' : 'desc';
 
         const sortLabel = resolveSortLabel(state.sortBy);
-        const orderLabel = state.order === 'asc' ? '升序' : '降序';
+        const orderLabel = state.order === 'asc' ? 'ascending' : 'descending';
         summary.textContent = `Top ${state.limit} · ${sortLabel}`;
-        sortMeta.textContent = `排序：${sortLabel}（${orderLabel}）`;
-        note.textContent = `当前：Top ${state.limit} · ${sortLabel} · ${orderLabel}`;
+        sortMeta.textContent = `Sort: ${sortLabel} (${orderLabel})`;
+        note.textContent = `Current: Top ${state.limit} · ${sortLabel} · ${orderLabel}`;
         renderTable(payload.results || []);
         setQueryParams();
     };
@@ -493,7 +475,7 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
 function networkTemplate() {
     return `
         <div id="network-rewards-view" class="network-shell">
-            <div class="loading">加载中...</div>
+            <div class="loading">Loading...</div>
         </div>
         ${footnotesNetwork()}
     `;
@@ -503,13 +485,13 @@ async function renderNetworkRewards({ ticket }) {
     appRoot.innerHTML = networkTemplate();
     const container = appRoot.querySelector('#network-rewards-view');
 
-    container.innerHTML = '<div class="loading">加载中...</div>';
+    container.innerHTML = '<div class="loading">Loading...</div>';
     let response;
     try {
         response = await fetch('/rewards/network', { headers: { Accept: 'application/json' } });
     } catch (err) {
         if (ticket === renderEpoch) {
-            container.innerHTML = renderError('加载失败，请稍后重试');
+            container.innerHTML = renderError('Failed to load, please try again.');
         }
         return () => destroyChart();
     }
@@ -526,7 +508,7 @@ async function renderNetworkRewards({ ticket }) {
     }
 
     if (!response.ok || !payload || !payload.current) {
-        container.innerHTML = renderError((payload && payload.error) || '暂时无法获取全网收益数据');
+        container.innerHTML = renderError((payload && payload.error) || 'Unable to fetch network rewards right now');
         return () => destroyChart();
     }
 
@@ -545,8 +527,8 @@ function renderNetworkStats(current, history) {
         ? `
             <section class="chart-panel">
                 <div class="panel-header">
-                    <h2 class="panel-title">历史收益趋势</h2>
-                    <p class="panel-note">最近 ${history.length} 个窗口</p>
+                    <h2 class="panel-title">Reward history</h2>
+                    <p class="panel-note">Last ${history.length} windows</p>
                 </div>
                 <div class="chart-container">
                     <canvas id="rewardsChart"></canvas>
@@ -559,44 +541,44 @@ function renderNetworkStats(current, history) {
         <section class="network-header">
             <div class="header-copy">
                 <div class="network-eyebrow">Network Rewards</div>
-                <h1 class="network-title">全网收益</h1>
+                <h1 class="network-title">Network rewards</h1>
                 <p class="network-description">
-                    汇总最新统计窗口的收益与运行状况，涵盖共识层与执行层的收益。
+                    Summarizes the latest reward window across the consensus and execution layers.
                 </p>
                 <div class="network-meta">
                     <div class="meta-item">
-                        <span class="meta-label">窗口开始</span>
+                        <span class="meta-label">Window start</span>
                         <span class="meta-value">${formatTime(current.window_start)}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">窗口结束</span>
+                        <span class="meta-label">Window end</span>
                         <span class="meta-value">${formatTime(current.window_end)}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">持续时间</span>
+                        <span class="meta-label">Duration</span>
                         <span class="meta-value">${formatDuration(current.window_duration_seconds)}</span>
                     </div>
                 </div>
             </div>
             <div class="window-highlight">
-                <div class="window-label">活跃 Validator 数量</div>
+                <div class="window-label">Active validators</div>
                 <div class="window-value">${formatNumber(current.active_validator_count)}</div>
-                <div class="window-subtext">总有效余额：${formatNumber(formatGweiToAce(current.total_effective_balance_gwei))} ACE</div>
+                <div class="window-subtext">Total effective balance: ${formatNumber(formatGweiToAce(current.total_effective_balance_gwei))} ACE</div>
                 <div class="chip">
                     <span class="chip-dot"></span>
-                    <span>窗口截止：${formatTime(current.window_end)}</span>
+                    <span>Window end: ${formatTime(current.window_end)}</span>
                 </div>
             </div>
         </section>
 
         <section class="metrics-grid">
             <article class="metric-card accent">
-                <div class="metric-label">预估 APR</div>
+                <div class="metric-label">Projected APR</div>
                 <div class="metric-value">${Number(current.project_apr_percent || 0).toFixed(3)}%</div>
-                <div class="metric-subtext">基于最后收益窗口</div>
+                <div class="metric-subtext">Based on the latest reward window</div>
             </article>
             <article class="metric-card">
-                <div class="metric-label">总收益 (ACE)</div>
+                <div class="metric-label">Total rewards (ACE)</div>
                 <div class="metric-value">${formatNumber(formatGweiToAce(current.total_rewards_gwei))}</div>
                 <div class="metric-foot">
                     <span class="pill"><span class="dot"></span>CL: ${formatNumber(formatGweiToAce(current.cl_rewards_gwei))}</span>
@@ -604,14 +586,14 @@ function renderNetworkStats(current, history) {
                 </div>
             </article>
             <article class="metric-card">
-                <div class="metric-label">共识层收益</div>
+                <div class="metric-label">Consensus rewards</div>
                 <div class="metric-value">${formatNumber(formatGweiToAce(current.cl_rewards_gwei))}</div>
-                <div class="metric-subtext">单位：ACE</div>
+                <div class="metric-subtext">Unit: ACE</div>
             </article>
             <article class="metric-card">
-                <div class="metric-label">执行层收益</div>
+                <div class="metric-label">Execution rewards</div>
                 <div class="metric-value">${formatNumber(formatGweiToAce(current.el_rewards_gwei))}</div>
-                <div class="metric-subtext">单位：ACE</div>
+                <div class="metric-subtext">Unit: ACE</div>
             </article>
         </section>
 
@@ -626,7 +608,7 @@ function renderHistoryChart(history) {
     }
 
     const sorted = [...history].sort((a, b) => new Date(a.window_start) - new Date(b.window_start));
-    const labels = sorted.map((h) => new Date(h.window_end).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }));
+    const labels = sorted.map((h) => new Date(h.window_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
     const totalRewards = sorted.map((h) => Number(h.total_rewards_gwei) / 1e9);
     const aprData = sorted.map((h) => Number(h.project_apr_percent));
 
@@ -653,7 +635,7 @@ function renderHistoryChart(history) {
             labels,
             datasets: [
                 {
-                    label: '总收益 (ACE)',
+                    label: 'Total rewards (ACE)',
                     data: totalRewards,
                     borderColor: palette.primary,
                     backgroundColor: palette.primaryFill,
@@ -662,7 +644,7 @@ function renderHistoryChart(history) {
                     pointRadius: 3,
                 },
                 {
-                    label: '预估 APR (%)',
+                    label: 'Projected APR (%)',
                     data: aprData,
                     borderColor: palette.warning,
                     backgroundColor: palette.warningFill,
@@ -688,9 +670,9 @@ function renderHistoryChart(history) {
                     callbacks: {
                         label(context) {
                             if (context.datasetIndex === 0) {
-                                return `总收益: ${formatNumber(context.parsed.y)} ACE`;
+                                return `Total rewards: ${formatNumber(context.parsed.y)} ACE`;
                             }
-                            return `预估 APR: ${context.parsed.y.toFixed(3)}%`;
+                            return `Projected APR: ${context.parsed.y.toFixed(3)}%`;
                         },
                     },
                 },
@@ -704,7 +686,7 @@ function renderHistoryChart(history) {
                     type: 'linear',
                     display: true,
                     position: 'left',
-                    title: { display: true, text: '总收益 (ACE)', color: palette.text },
+                    title: { display: true, text: 'Total rewards (ACE)', color: palette.text },
                     ticks: { color: palette.text },
                     grid: { color: palette.grid, drawBorder: false },
                 },
@@ -712,7 +694,7 @@ function renderHistoryChart(history) {
                     type: 'linear',
                     display: true,
                     position: 'right',
-                    title: { display: true, text: '预估 APR (%)', color: palette.text },
+                    title: { display: true, text: 'Projected APR (%)', color: palette.text },
                     grid: { drawOnChartArea: false, color: palette.grid },
                     ticks: { color: palette.text },
                 },
@@ -732,12 +714,12 @@ function addressTemplate() {
     return `
         <div class="card">
             <div class="card-header">
-                <h1 class="card-title">地址收益查询</h1>
+                <h1 class="card-title">Address rewards lookup</h1>
             </div>
 
             <form id="query-form">
                 <div class="form-group">
-                    <label for="address">地址或 Withdrawal Credentials</label>
+                    <label for="address">Address or withdrawal credentials</label>
                     <input type="text" 
                            id="address" 
                            name="address" 
@@ -745,19 +727,19 @@ function addressTemplate() {
                            required
                            pattern="0x[a-fA-F0-9]{40}|0x0[12][a-fA-F0-9]{62}">
                     <small style="color: var(--text-secondary); display: block; margin-top: var(--space-1);">
-                        支持普通地址（0x + 40 字符）或 withdrawal credentials（0x01/0x02 + 64 字符）
+                        Supports standard addresses (0x + 40 chars) or withdrawal credentials (0x01/0x02 + 64 chars)
                     </small>
                 </div>
 
                 <div class="form-group">
                     <label>
                         <input type="checkbox" name="include_validator_indices" value="true">
-                        包含 Validator 索引列表
+                        Include validator indices
                     </label>
                 </div>
 
-                <button type="submit" id="submit-btn">查询</button>
-                <span id="loading" style="margin-left: var(--space-4); display: none;">加载中...</span>
+                <button type="submit" id="submit-btn">Search</button>
+                <span id="loading" style="margin-left: var(--space-4); display: none;">Loading...</span>
             </form>
         </div>
 
@@ -770,12 +752,12 @@ function renderAddressResult(data) {
     return `
         <div class="card" style="margin-top: var(--space-6);">
             <div class="card-header">
-                <h2 class="card-title">查询结果</h2>
+                <h2 class="card-title">Result</h2>
             </div>
 
             <div class="stats-grid">
                 <div class="stat-card">
-                    <div class="stat-label">地址</div>
+                    <div class="stat-label">Address</div>
                     <div class="stat-value address address-copy-target" data-address="${data.address}" title="${data.address}" style="font-size: 1rem;">
                         ${formatAddress(data.address)}
                     </div>
@@ -783,45 +765,45 @@ function renderAddressResult(data) {
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-label">活跃 Validator 数量</div>
+                    <div class="stat-label">Active validators</div>
                     <div class="stat-value">${formatNumber(data.active_validator_count)}</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-label">CL 收益</div>
+                    <div class="stat-label">CL rewards</div>
                     <div class="stat-value">${formatNumber(formatGweiToAce(data.cl_rewards_gwei))} ACE</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-label">EL 收益</div>
+                    <div class="stat-label">EL rewards</div>
                     <div class="stat-value">${formatNumber(formatGweiToAce(data.el_rewards_gwei))} ACE</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-label">总收益</div>
+                    <div class="stat-label">Total rewards</div>
                     <div class="stat-value">${formatNumber(formatGweiToAce(data.total_rewards_gwei))} ACE</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-label">预估历史收益（31天）</div>
+                    <div class="stat-label">Estimated rewards (31 days)</div>
                     <div class="stat-value">${formatNumber(formatGweiToAce(data.estimated_history_rewards_31d_gwei || 0))} ACE</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-label">总有效余额</div>
+                    <div class="stat-label">Total effective balance</div>
                     <div class="stat-value">${formatNumber(formatGweiToAce(data.total_effective_balance_gwei))} ACE</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-label">加权平均质押时间</div>
+                    <div class="stat-label">Weighted average stake time</div>
                     <div class="stat-value">${formatDuration(data['weighted_average_stake_time(seconds)'])}</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-label">时间窗口</div>
+                    <div class="stat-label">Window</div>
                     <div class="stat-value" style="font-size: 0.875rem;">
                         ${formatTime(data.window_start)}<br>
-                        至<br>
+                        to<br>
                         ${formatTime(data.window_end)}
                     </div>
                 </div>
@@ -830,7 +812,7 @@ function renderAddressResult(data) {
             ${data.validator_indices && data.validator_indices.length > 0 ? `
                 <details style="margin-top: var(--space-6);">
                     <summary style="cursor: pointer; font-weight: 600; padding: var(--space-2); background: var(--bg-color); border-radius: var(--radius-md);">
-                        Validator 索引列表 (${data.validator_indices.length} 个)
+                        Validator indices (${data.validator_indices.length})
                     </summary>
                     <div style="margin-top: var(--space-2); padding: var(--space-4); background: var(--bg-color); border-radius: var(--radius-md); max-height: 300px; overflow-y: auto;">
                         <div style="display: flex; flex-wrap: wrap; gap: var(--space-2);">
@@ -860,7 +842,7 @@ async function renderAddressRewards({ ticket, cleaner }) {
         const includeIndices = formData.get('include_validator_indices') === 'true';
 
         if (!address) {
-            result.innerHTML = renderError('地址不能为空');
+            result.innerHTML = renderError('Address is required');
             return;
         }
 
@@ -876,7 +858,7 @@ async function renderAddressRewards({ ticket, cleaner }) {
             });
         } catch (err) {
             if (ticket === renderEpoch) {
-                result.innerHTML = renderError('请求失败，请稍后再试');
+                result.innerHTML = renderError('Request failed, please try again.');
                 setLoading(false);
             }
             return;
@@ -896,7 +878,7 @@ async function renderAddressRewards({ ticket, cleaner }) {
         setLoading(false);
 
         if (!response.ok || !payload) {
-            result.innerHTML = renderError((payload && payload.error) || '查询失败');
+            result.innerHTML = renderError((payload && payload.error) || 'Lookup failed');
             return;
         }
 

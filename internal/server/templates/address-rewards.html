@@ -1,16 +1,16 @@
 {{template "base.html" .}}
 
-{{define "title"}}地址收益查询 - Endurance Rewards{{end}}
+{{define "title"}}Address Rewards Lookup - Endurance Rewards{{end}}
 
 {{define "content"}}
 <div class="card">
     <div class="card-header">
-        <h1 class="card-title">地址收益查询</h1>
+        <h1 class="card-title">Address rewards lookup</h1>
     </div>
 
     <form id="query-form">
         <div class="form-group">
-            <label for="address">地址或 Withdrawal Credentials</label>
+            <label for="address">Address or withdrawal credentials</label>
             <input type="text" 
                    id="address" 
                    name="address" 
@@ -18,37 +18,37 @@
                    required
                    pattern="0x[a-fA-F0-9]{40}|0x0[12][a-fA-F0-9]{62}">
             <small style="color: var(--text-secondary); display: block; margin-top: 0.25rem;">
-                支持普通地址（0x + 40 字符）或 withdrawal credentials（0x01/0x02 + 64 字符）
+                Supports standard addresses (0x + 40 chars) or withdrawal credentials (0x01/0x02 + 64 chars)
             </small>
         </div>
 
         <div class="form-group">
             <label>
                 <input type="checkbox" name="include_validator_indices" value="true">
-                包含 Validator 索引列表
+                Include validator indices
             </label>
         </div>
 
-        <button type="submit" id="submit-btn">查询</button>
-        <span id="loading" style="margin-left: 1rem; display: none;">加载中...</span>
+        <button type="submit" id="submit-btn">Search</button>
+        <span id="loading" style="margin-left: 1rem; display: none;">Loading...</span>
     </form>
 </div>
 
 <div id="result-container"></div>
 
 <div class="footnotes">
-    <h3>字段说明</h3>
+    <h3>Field reference</h3>
     <ol>
-        <li><strong>地址</strong>：查询的存款地址或提款地址</li>
-        <li><strong>活跃 Validator 数量</strong>：该地址资助的当前处于活跃状态的验证者数量</li>
-        <li><strong>Validator 索引列表</strong>：该地址资助的所有活跃验证者的索引号（可选显示）</li>
-        <li><strong>CL 收益</strong>：共识层收益（单位：ACE）</li>
-        <li><strong>EL 收益</strong>：执行层收益（单位：ACE）</li>
-        <li><strong>总收益</strong>：CL 和 EL 收益的总和（单位：ACE）</li>
-        <li><strong>预估历史收益（31天）</strong>：基于全网 APR 估算的过去 31 天收益（单位：ACE）</li>
-        <li><strong>总有效余额</strong>：所有活跃验证者的有效余额总和（单位：ACE）</li>
-        <li><strong>加权平均质押时间</strong>：基于存款金额加权的平均质押时长</li>
-        <li><strong>时间窗口</strong>：当前统计的时间范围</li>
+        <li><strong>Address</strong>: Deposit or withdrawal address being queried</li>
+        <li><strong>Active validators</strong>: Number of validators funded by this address that are currently active</li>
+        <li><strong>Validator indices</strong>: Index numbers of all active validators funded by this address (optional)</li>
+        <li><strong>CL rewards</strong>: Consensus layer rewards (ACE)</li>
+        <li><strong>EL rewards</strong>: Execution layer rewards (ACE)</li>
+        <li><strong>Total rewards</strong>: Sum of CL and EL rewards (ACE)</li>
+        <li><strong>Estimated 31d rewards</strong>: Estimated rewards for the past 31 days based on network APR (ACE)</li>
+        <li><strong>Total effective balance</strong>: Sum of effective balances for all active validators (ACE)</li>
+        <li><strong>Weighted average stake time</strong>: Average staking duration weighted by deposit amount</li>
+        <li><strong>Window</strong>: Reporting window used for the calculation</li>
     </ol>
 </div>
 {{end}}
