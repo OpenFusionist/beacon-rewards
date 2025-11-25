@@ -1,24 +1,24 @@
 {{template "base.html" .}}
 
-{{define "title"}}全网收益 - Endurance Rewards{{end}}
+{{define "title"}}Network Rewards - Endurance Rewards{{end}}
 
 {{define "head"}}{{end}}
 
 {{define "content"}}
 <div id="network-rewards-view" class="network-shell">
-    <div class="loading">加载中...</div>
+    <div class="loading">Loading...</div>
 </div>
 
 <div class="footnotes">
-    <h3>字段说明</h3>
+    <h3>Field reference</h3>
     <ol>
-        <li><strong>时间窗口</strong>：当前统计的时间范围（从窗口开始到窗口结束）</li>
-        <li><strong>活跃 Validator 数量</strong>：当前处于活跃状态的验证者总数</li>
-        <li><strong>CL 收益</strong>：共识层（Consensus Layer）收益，包括验证奖励、提案奖励等（单位：ACE）</li>
-        <li><strong>EL 收益</strong>：执行层（Execution Layer）收益，主要是交易手续费（单位：ACE）</li>
-        <li><strong>总收益</strong>：CL 收益和 EL 收益的总和（单位：ACE）</li>
-        <li><strong>总有效余额</strong>：所有活跃验证者的有效余额总和（单位：ACE）</li>
-        <li><strong>预估 APR</strong>：基于当前窗口收益计算的年化收益率（百分比）</li>
+        <li><strong>Window</strong>: Reporting window used (start to end)</li>
+        <li><strong>Active validator count</strong>: Total validators currently active</li>
+        <li><strong>CL rewards</strong>: Consensus layer rewards, including attestations and proposals (ACE)</li>
+        <li><strong>EL rewards</strong>: Execution layer rewards, primarily transaction fees (ACE)</li>
+        <li><strong>Total rewards</strong>: Sum of CL and EL rewards (ACE)</li>
+        <li><strong>Total effective balance</strong>: Effective balance across all active validators (ACE)</li>
+        <li><strong>Projected APR</strong>: Annualized rate based on the current window rewards (%)</li>
     </ol>
 </div>
 {{end}}

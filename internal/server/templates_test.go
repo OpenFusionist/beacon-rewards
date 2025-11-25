@@ -32,7 +32,7 @@ func TestLoadTemplatesSeparatesPages(t *testing.T) {
 	if strings.Contains(addressHTML, `<div id="table-container"`) {
 		t.Fatalf("address template unexpectedly contains top-deposits table markup")
 	}
-	if !strings.Contains(addressHTML, "地址收益查询") {
+	if !strings.Contains(addressHTML, "Address rewards lookup") {
 		t.Fatalf("address template missing expected address query heading")
 	}
 }

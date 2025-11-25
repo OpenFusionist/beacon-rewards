@@ -14,15 +14,27 @@
         </colgroup>
         <thead>
             <tr>
-                <th>排名</th>
-                <th>存款地址</th>
-                <th>标签</th>
-                <th class="sortable" data-sort-by="total_deposit" data-order="{{if eq .sort_by "total_deposit"}}{{.order}}{{end}}">总存款金额 (ACE)</th>
-                <th class="sortable" data-sort-by="validators_total" data-order="{{if eq .sort_by "validators_total"}}{{.order}}{{end}}">Validator 总数</th>
-                <th class="sortable" data-sort-by="active" data-order="{{if eq .sort_by "active"}}{{.order}}{{end}}">活跃数量</th>
-                <th class="sortable" data-sort-by="slashed" data-order="{{if eq .sort_by "slashed"}}{{.order}}{{end}}">被罚没数量</th>
-                <th class="sortable" data-sort-by="voluntary_exited" data-order="{{if eq .sort_by "voluntary_exited"}}{{.order}}{{end}}">主动退出数量</th>
-                <th class="sortable" data-sort-by="total_active_effective_balance" data-order="{{if eq .sort_by "total_active_effective_balance"}}{{.order}}{{end}}">总有效余额 (ACE)</th>
+                <th><abbr class="header-abbr" data-tooltip="Ranking position" aria-label="Ranking position">Rank</abbr></th>
+                <th><abbr class="header-abbr" data-tooltip="Depositor address" aria-label="Depositor address">Addr</abbr></th>
+                <th><abbr class="header-abbr" data-tooltip="Optional label for the depositor" aria-label="Optional label for the depositor">Label</abbr></th>
+                <th class="sortable" data-sort-by="total_deposit" data-order="{{if eq .sort_by "total_deposit"}}{{.order}}{{end}}">
+                    <abbr class="header-abbr" data-tooltip="Total deposit amount (ACE)" aria-label="Total deposit amount (ACE)">Dep</abbr>
+                </th>
+                <th class="sortable" data-sort-by="validators_total" data-order="{{if eq .sort_by "validators_total"}}{{.order}}{{end}}">
+                    <abbr class="header-abbr" data-tooltip="Number of validators" aria-label="Total Number of validators">Tot</abbr>
+                </th>
+                <th class="sortable" data-sort-by="active" data-order="{{if eq .sort_by "active"}}{{.order}}{{end}}">
+                    <abbr class="header-abbr" data-tooltip="Active validators" aria-label="Active validators">Act</abbr>
+                </th>
+                <th class="sortable" data-sort-by="slashed" data-order="{{if eq .sort_by "slashed"}}{{.order}}{{end}}">
+                    <abbr class="header-abbr" data-tooltip="Number of slashed validators" aria-label="Number of slashed validators">Sla</abbr>
+                </th>
+                <th class="sortable" data-sort-by="voluntary_exited" data-order="{{if eq .sort_by "voluntary_exited"}}{{.order}}{{end}}">
+                    <abbr class="header-abbr" data-tooltip="Number of voluntarily exited validators" aria-label="Number of voluntarily exited validators">Ex</abbr>
+                </th>
+                <th class="sortable" data-sort-by="total_active_effective_balance" data-order="{{if eq .sort_by "total_active_effective_balance"}}{{.order}}{{end}}">
+                    <abbr class="header-abbr" data-tooltip="Total effective balance (ACE)" aria-label="Total effective balance (ACE)">Tot</abbr>
+                </th>
             </tr>
         </thead>
         <tbody>
@@ -59,5 +71,5 @@
     </table>
 </div>
 {{else}}
-<div class="empty">暂无数据</div>
+<div class="empty">No data available</div>
 {{end}}

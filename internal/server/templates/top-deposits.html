@@ -1,55 +1,37 @@
 {{template "base.html" .}}
 
-{{define "title"}}大户排行 - Endurance Rewards{{end}}
+{{define "title"}}Top Depositors - Endurance Rewards{{end}}
 
 {{define "content"}}
 <div id="top-deposits-view" class="page-shell" data-view="top-deposits">
     <section class="page-header">
         <div>
             <div class="page-eyebrow">Depositor Leaderboard</div>
-            <h1 class="page-title">大户排行</h1>
+            <h1 class="page-title">Top Depositors</h1>
             <p class="page-description">
-                汇总前排存款地址，展示 Validator 规模、活跃状态与总有效余额；点击表头即可切换排序。
+                Aggregates leading deposit addresses with validator scale, activity, and effective balance. Click any header to change the sort.
             </p>
             <div class="meta-row">
-                <span class="meta-pill" id="top-deposits-summary">列表加载中</span>
-                <span class="meta-pill" id="top-deposits-sort">排序：-</span>
-                <span class="meta-pill">单位：ACE</span>
-                <span class="meta-pill">交互：点击表头切换</span>
+                <span class="meta-pill" id="top-deposits-summary">Loading leaderboard</span>
+                <span class="meta-pill" id="top-deposits-sort">Sort: -</span>
+                <span class="meta-pill">Unit: ACE</span>
+                <span class="meta-pill">Tip: Click headers to sort</span>
             </div>
-        </div>
-        <div class="summary-card">
-            <div class="summary-label">数据刷新</div>
-            <div class="summary-value" id="top-deposits-window">实时查询</div>
-            <div class="summary-subtext">按指定排序字段返回 Top N 结果</div>
         </div>
     </section>
 
     <section class="table-card">
         <div class="table-toolbar">
             <div>
-                <div class="table-title">存款地址排行榜</div>
-                <div class="table-subtitle">包含存款额、Validator 状态和有效余额</div>
+                <div class="table-title">Depositor leaderboard</div>
+                <div class="table-subtitle">Includes deposit total, validator status, and effective balance</div>
             </div>
-            <div class="table-note" id="top-deposits-note">加载中...</div>
+            <div class="table-note" id="top-deposits-note">Loading...</div>
         </div>
         <div id="top-deposits-table">
-            <div class="loading">加载中...</div>
+            <div class="loading">Loading...</div>
         </div>
     </section>
-</div>
-
-<div class="footnotes">
-    <h3>字段说明</h3>
-    <ol>
-        <li><strong>存款地址</strong>：向存款合约发送交易的地址</li>
-        <li><strong>总存款金额</strong>：该地址向存款合约发送的总金额（单位：ACE）</li>
-        <li><strong>Validator 总数</strong>：该地址资助的验证者总数</li>
-        <li><strong>活跃数量</strong>：当前处于活跃状态的验证者数量（未被罚没且有效余额大于0）</li>
-        <li><strong>被罚没数量</strong>：因违规行为被罚没的验证者数量</li>
-        <li><strong>主动退出数量</strong>：主动退出且有效余额为0的验证者数量</li>
-        <li><strong>总有效余额</strong>：所有活跃验证者的有效余额总和（单位：ACE）</li>
-    </ol>
 </div>
 {{end}}
 
