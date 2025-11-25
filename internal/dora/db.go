@@ -378,37 +378,73 @@ WHERE validator_index = ANY($1)
 }
 
 // ValidatorDetailsByAddress returns validator lifecycles, effective balances, and total deposits for an address.
+// It first queries by withdrawal_credentials; if no results, falls back to querying by deposit tx_sender.
 func (d *DB) ValidatorDetailsByAddress(ctx context.Context, address string) ([]ValidatorDetail, error) {
 	if d == nil || d.db == nil {
 		return nil, nil
 	}
 
+	// First, try to query by withdrawal_credentials
+	results, err := d.validatorDetailsByWithdrawalAddress(ctx, address)
+	if err != nil {
+		return nil, err
+	}
+
+	// If withdrawal_credentials query returned results, return them
+	if len(results) > 0 {
+		return results, nil
+	}
+
+	// Otherwise, fall back to querying by deposit tx_sender
+	return d.validatorDetailsByDepositor(ctx, address)
+}
+
+// validatorDetailsByWithdrawalAddress queries validators by withdrawal_credentials.
+func (d *DB) validatorDetailsByWithdrawalAddress(ctx context.Context, address string) ([]ValidatorDetail, error) {
 	rows, err := d.db.QueryContext(ctx, `
-WITH addr_validators AS (
-  SELECT v.validator_index, v.effective_balance, v.activation_epoch, v.exit_epoch, v.pubkey
-  FROM validators v
-  WHERE '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') = lower($1)
-  UNION
-  SELECT v.validator_index, v.effective_balance, v.activation_epoch, v.exit_epoch, v.pubkey
-  FROM deposit_txs dt
-  JOIN validators v ON dt.publickey = v.pubkey
-  WHERE '0x' || encode(dt.tx_sender,'hex') = lower($1)
-)
 SELECT
-  av.validator_index,
-  av.effective_balance,
-  av.activation_epoch,
-  av.exit_epoch,
+  v.validator_index,
+  v.effective_balance,
+  v.activation_epoch,
+  v.exit_epoch,
   COALESCE(SUM(dt.amount), 0)::bigint AS total_deposit
-FROM addr_validators av
-LEFT JOIN deposit_txs dt ON dt.publickey = av.pubkey
-GROUP BY av.validator_index, av.effective_balance, av.activation_epoch, av.exit_epoch
+FROM validators v
+LEFT JOIN deposit_txs dt ON dt.publickey = v.pubkey
+WHERE '0x' || encode(substr(v.withdrawal_credentials, 13, 20), 'hex') = lower($1)
+GROUP BY v.validator_index, v.effective_balance, v.activation_epoch, v.exit_epoch
 `, address)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	return scanValidatorDetails(rows)
+}
+
+// validatorDetailsByDepositor queries validators by deposit tx_sender.
+func (d *DB) validatorDetailsByDepositor(ctx context.Context, address string) ([]ValidatorDetail, error) {
+	rows, err := d.db.QueryContext(ctx, `
+SELECT
+  v.validator_index,
+  v.effective_balance,
+  v.activation_epoch,
+  v.exit_epoch,
+  COALESCE(SUM(dt.amount), 0)::bigint AS total_deposit
+FROM deposit_txs dt
+JOIN validators v ON dt.publickey = v.pubkey
+WHERE '0x' || encode(dt.tx_sender,'hex') = lower($1)
+GROUP BY v.validator_index, v.effective_balance, v.activation_epoch, v.exit_epoch
+`, address)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanValidatorDetails(rows)
+}
+
+// scanValidatorDetails scans rows into ValidatorDetail slice.
+func scanValidatorDetails(rows *sql.Rows) ([]ValidatorDetail, error) {
 	results := make([]ValidatorDetail, 0)
 	for rows.Next() {
 		var (
