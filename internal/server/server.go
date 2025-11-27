@@ -38,6 +38,7 @@ type Server struct {
 	httpServer      *http.Server
 	depositorLabels map[string]string
 	templates       map[string]*template.Template
+	frontendEnabled bool
 }
 
 // NewServer creates a new HTTP server
@@ -52,9 +53,19 @@ func NewServer(cfg *config.Config, rewardsService *rewards.Service, doraDB *dora
 		slog.Warn("Failed to load depositor labels", "path", cfg.DepositorLabelsFile, "error", err)
 	}
 
-	templates, err := loadTemplates()
-	if err != nil {
-		slog.Warn("Failed to load templates", "error", err)
+	var templates map[string]*template.Template
+	frontendEnabled := cfg.EnableFrontend
+	if cfg.EnableFrontend {
+		templates, err = loadTemplates()
+		if err != nil {
+			slog.Warn("Failed to load templates", "error", err)
+		}
+		if len(templates) == 0 {
+			slog.Warn("Disabling frontend: no templates found")
+			frontendEnabled = false
+		}
+	} else {
+		slog.Info("Frontend disabled via configuration")
 	}
 
 	s := &Server{
@@ -64,10 +75,11 @@ func NewServer(cfg *config.Config, rewardsService *rewards.Service, doraDB *dora
 		router:          router,
 		depositorLabels: depositorLabels,
 		templates:       templates,
+		frontendEnabled: frontendEnabled,
 	}
 
 	// Set HTML renderer
-	if templates != nil {
+	if s.frontendEnabled && templates != nil {
 		s.router.HTMLRender = &HTMLRenderer{templates: templates}
 	}
 
@@ -78,24 +90,29 @@ func NewServer(cfg *config.Config, rewardsService *rewards.Service, doraDB *dora
 
 // setupRoutes configures the API routes
 func (s *Server) setupRoutes() {
-	// Static files
-	s.router.Static("/static", "./internal/server/static")
+	if s.frontendEnabled {
+		// Static files
+		s.router.Static("/static", "./internal/server/static")
 
-	// Page routes (HTML pages) - order matters, more specific routes first
-	s.router.GET("/", func(c *gin.Context) {
-		slog.Info("Root path accessed, redirecting to top-deposits")
-		c.Redirect(http.StatusFound, "/deposits/top-deposits")
-	})
+		// Page routes (HTML pages) - order matters, more specific routes first
+		s.router.GET("/", func(c *gin.Context) {
+			slog.Info("Root path accessed, redirecting to top-deposits")
+			c.Redirect(http.StatusFound, "/deposits/top-deposits")
+		})
 
-	// Log route registration
-	slog.Info("Registering routes",
-		"top-deposits", "/deposits/top-deposits",
-		"network-rewards", "/rewards/network",
-		"address-rewards", "/rewards/by-address")
+		slog.Info("Registering routes with frontend enabled",
+			"top-deposits", "/deposits/top-deposits",
+			"network-rewards", "/rewards/network",
+			"address-rewards", "/rewards/by-address")
+	} else {
+		slog.Info("Registering API-only routes; frontend disabled")
+	}
 
 	s.router.GET("/deposits/top-deposits", s.topDepositsPageOrAPIHandler)
 	s.router.GET("/rewards/network", s.networkRewardsPageOrAPIHandler)
-	s.router.GET("/rewards/by-address", s.addressRewardsPageHandler)
+	if s.frontendEnabled {
+		s.router.GET("/rewards/by-address", s.addressRewardsPageHandler)
+	}
 
 	// Health check endpoint
 	s.router.GET("/health", s.healthHandler)
@@ -562,6 +579,12 @@ func (s *Server) topDepositsPageOrAPIHandler(c *gin.Context) {
 		"hx-request", c.GetHeader("HX-Request"),
 		"accept", c.GetHeader("Accept"))
 
+	if !s.frontendEnabled {
+		slog.Info("Frontend disabled, serving top-deposits as JSON")
+		s.topDepositsAPIHandler(c)
+		return
+	}
+
 	// Check if this is an HTMX request (for table fragment) or API request
 	if c.GetHeader("HX-Request") == "true" {
 		slog.Info("Handling as HTMX request for table fragment")
@@ -687,6 +710,12 @@ func (s *Server) networkRewardsPageOrAPIHandler(c *gin.Context) {
 		"hx-request", c.GetHeader("HX-Request"),
 		"accept", c.GetHeader("Accept"),
 		"user-agent", c.GetHeader("User-Agent"))
+
+	if !s.frontendEnabled {
+		slog.Info("Frontend disabled, serving network rewards as JSON")
+		s.networkRewardsHandler(c)
+		return
+	}
 
 	// Check if this is an API request (Accept: application/json)
 	accept := c.GetHeader("Accept")

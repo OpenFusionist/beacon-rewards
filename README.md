@@ -2,6 +2,13 @@
 
 A high-performance validator reward statistics service for Ethereum validators. Tracks and caches validator rewards, providing a RESTful API for querying reward data and deposit analytics.
 
+## Repository layout
+
+- This repo houses the Go backend and the web frontend together
+- The backend is fully standalone: you can clone the repo and run the commands below without installing any frontend toolchain or dependencies.
+- If you only need the API, ignore any frontend-related directories when they appear; the frontend will keep its own README and build steps.
+- To run in API-only mode (no HTML pages or static assets), set `ENABLE_FRONTEND=false` in your environment; the API routes will stay available.
+
 ## Quick Start
 
 ### Installation
@@ -36,11 +43,20 @@ docker run -p 8080:8080 --env-file .env endurance-rewards
 docker run -p 8080:8080   --env-file $(pwd)/.env   -v $(pwd)/data:/app/data   --restart=unless-stopped   --name endurance-rewards   -d   endurance-rewards
 ```
 
+### API-only mode
+
+If you are only running the Go API:
+
+```bash
+ENABLE_FRONTEND=false make run
+```
+
 ## Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SERVER_PORT` | HTTP server port | `8080` |
+| `ENABLE_FRONTEND` | Serve HTML pages/static assets; set to `false` for API-only deployments | `true` |
 | `BEACON_NODE_URL` | Beacon chain node URL | `http://localhost:5052` |
 | `EXECUTION_NODE_URL` | Execution layer node URL | `http://localhost:8545` |
 | `DORA_PG_URL` | Dora Postgres URL (required for deposit endpoints) | `postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable` |
