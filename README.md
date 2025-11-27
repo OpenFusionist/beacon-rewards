@@ -4,10 +4,7 @@ A high-performance validator reward statistics service for Ethereum validators. 
 
 ## Repository layout
 
-- This repo houses the Go backend and the web frontend together
-- The backend is fully standalone: you can clone the repo and run the commands below without installing any frontend toolchain or dependencies.
-- If you only need the API, ignore any frontend-related directories when they appear; the frontend will keep its own README and build steps.
-- To run in API-only mode (no HTML pages or static assets), set `ENABLE_FRONTEND=false` in your environment; the API routes will stay available.
+This repo contains both backend (Go) and frontend. Set `ENABLE_FRONTEND=false` to run backend API only.
 
 ## Quick Start
 
@@ -16,96 +13,64 @@ A high-performance validator reward statistics service for Ethereum validators. 
 ```bash
 git clone <repository-url>
 cd endurance-rewards
+cp .env.example .env   # edit to match your nodes and DB
 make deps
+make run               # builds, regenerates Swagger, and starts the server
 ```
 
-### Configuration
+Visit Swagger at `http://localhost:8080/swagger/index.html`. To disable HTML pages and run API-only, set `ENABLE_FRONTEND=false`.
 
-Set environment variables (or create `.env` file):
-
-```bash
-BEACON_NODE_URL=http://localhost:5052
-EXECUTION_NODE_URL=http://localhost:8545
-DORA_PG_URL=postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable
-```
-
-### Run
-
-```bash
-make run
-```
-
-Or with Docker:
-
+## Docker
 ```bash
 docker build -t endurance-rewards .
-docker run -p 8080:8080 --env-file .env endurance-rewards
-docker run -p 8080:8080   --env-file $(pwd)/.env   -v $(pwd)/data:/app/data   --restart=unless-stopped   --name endurance-rewards   -d   endurance-rewards
+docker run -p 8080:8080 --env-file $(pwd)/.env -v $(pwd)/data:/app/data --name endurance-rewards endurance-rewards
 ```
-
-### API-only mode
-
-If you are only running the Go API:
-
-```bash
-ENABLE_FRONTEND=false make run
-```
+Use `--restart=unless-stopped` for long-running deployments.
 
 ## Configuration
+Set environment variables or use `.env` (see `.env.example`):
 
 | Variable | Description | Default |
-|----------|-------------|---------|
-| `SERVER_PORT` | HTTP server port | `8080` |
-| `ENABLE_FRONTEND` | Serve HTML pages/static assets; set to `false` for API-only deployments | `true` |
-| `BEACON_NODE_URL` | Beacon chain node URL | `http://localhost:5052` |
-| `EXECUTION_NODE_URL` | Execution layer node URL | `http://localhost:8545` |
+| --- | --- | --- |
+| `SERVER_ADDRESS` | Listen address | `0.0.0.0` |
+| `SERVER_PORT` | Listen port | `8080` |
+| `ENABLE_FRONTEND` | Serve HTML pages/static assets | `true` |
+| `BEACON_NODE_URL` | Beacon chain node endpoint | `http://localhost:5052` |
+| `EXECUTION_NODE_URL` | Execution layer node endpoint | `http://localhost:8545` |
 | `DORA_PG_URL` | Dora Postgres URL (required for deposit endpoints) | `postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable` |
-| `DEPOSITOR_LABELS_FILE` | Path to YAML file mapping addresses to labels | `depositor-name.yaml` |
-| `START_EPOCH` | Epoch to backfill from (0 = cache window start) | `0` |
-| `BACKFILL_CONCURRENCY` | Number of workers for epoch backfill | `16` |
-| `LOG_LEVEL` | Log level (debug, info, warn, error) | `info` |
+| `DEPOSITOR_LABELS_FILE` | YAML mapping addresses to labels | `depositor-name.yaml` |
+| `START_EPOCH` | First epoch to backfill (0 defaults to cache window start) | `0` |
+| `EPOCH_CHECK_INTERVAL` | Polling interval for live sync | `12s` |
+| `EPOCH_PROCESS_MAX_RETRIES` | Max retries per epoch before skipping | `5` |
+| `EPOCH_PROCESS_BASE_BACKOFF` | Initial backoff for epoch retries | `2s` |
+| `EPOCH_PROCESS_MAX_BACKOFF` | Max backoff for epoch retries | `30s` |
+| `BACKFILL_CONCURRENCY` | Workers used during backfill | `16` |
+| `CACHE_RESET_INTERVAL` | Interval to reset cached rewards window | `24h` |
+| `REWARDS_HISTORY_FILE` | Path to append-only reward history log | `data/reward_history.jsonl` |
+| `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
+| `LOG_FORMAT` | `text` or `json` | `text` |
 
-## API Endpoints
+Ensure the `data/` directory is writable if you keep the default `REWARDS_HISTORY_FILE`.
 
-Swagger documentation: `http://localhost:8080/swagger/index.html`
+## API
+- `GET /health`
+- `POST /rewards` – validator rewards for specific indices
+- `GET /rewards/network` – aggregate rewards snapshot
+- `POST /rewards/by-address` – rewards aggregated by depositor/withdrawal address
+- `GET /deposits/top-withdrawals` – top withdrawal addresses
+- `GET /deposits/top-deposits` – top depositor addresses
 
-### Health Check
-```
-GET /health
-```
-
-### Get Validator Rewards
-```
-POST /rewards
-Body: {"validators": [1, 2, 3]}
-```
-
-### Get Network Rewards
-```
-GET /rewards/network
-```
-
-### Get Address Rewards
-```
-POST /rewards/by-address?include_validator_indices=false
-Body: {"address": "0xabc123..."}
-```
-
-### Top Withdrawal Addresses
-```
-GET /deposits/top-withdrawals?limit=100&sort_by=total_deposit&order=desc
-```
-
-### Top Depositor Addresses
-```
-GET /deposits/top-deposits?limit=100&sort_by=total_deposit&order=desc
-```
+Full request/response shapes are documented in Swagger (`/swagger/index.html`).
 
 ## Development
+- Run tests: `make test`
+- Lint: `make lint`
+- Build + regenerate Swagger docs: `make build`
+- Clean artifacts: `make clean`
+- Docker helpers: see `Makefile` targets (`docker-build`, `docker-run`, etc.)
 
-```bash
-make test    # Run tests
-make lint    # Run linter
-make build   # Build binary
-make clean   # Clean artifacts
-```
+`docs/` is generated by `swag`—do not edit by hand. Regenerate after handler or annotation changes.
+
+## Contributing, and license
+- See `CONTRIBUTING.md` for workflow and tooling.
+- Licensed under the Apache License 2.0 (see `LICENSE`).
