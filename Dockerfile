@@ -32,6 +32,10 @@ COPY --from=builder /app/rewards .
 # Copy default configuration file
 COPY depositor-name.yaml .
 
+# Copy frontend templates and static files
+COPY internal/server/templates/ internal/server/templates/
+COPY internal/server/static/ internal/server/static/
+
 # Create data directory for rewards history
 RUN mkdir -p data
 
