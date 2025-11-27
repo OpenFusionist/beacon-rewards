@@ -30,20 +30,20 @@ deps:
 
 # Build Docker image
 docker-build:
-	docker build -t endurance-rewards:latest .
+	docker build -t beacon-rewards:latest .
 
 # Build and run Docker container
 docker-run: docker-build
-	docker run -p 8080:8080 --env-file $(CURDIR)/.env -v $(CURDIR)/data:/app/data --restart=unless-stopped --name endurance-rewards -d endurance-rewards
+	docker run -p 8080:8080 --env-file $(CURDIR)/.env -v $(CURDIR)/data:/app/data --restart=unless-stopped --name beacon-rewards -d beacon-rewards
 
 docker-stop:
-	docker stop endurance-rewards
+	docker stop beacon-rewards
 
 docker-remove: docker-stop
-	docker rm endurance-rewards
+	docker rm beacon-rewards
 
 docker-logs:
-	docker logs -f endurance-rewards --tail 100
+	docker logs -f beacon-rewards --tail 100
 
 docker-exec:
-	docker exec -it endurance-rewards /bin/sh
+	docker exec -it beacon-rewards /bin/sh

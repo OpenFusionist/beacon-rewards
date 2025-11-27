@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"endurance-rewards/internal/config"
-	"endurance-rewards/internal/dora"
-	"endurance-rewards/internal/utils"
+	"beacon-rewards/internal/config"
+	"beacon-rewards/internal/dora"
+	"beacon-rewards/internal/utils"
 
 	"github.com/gobitfly/eth-rewards/elrewards"
 	"github.com/gobitfly/eth-rewards/types"

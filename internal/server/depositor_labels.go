@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"endurance-rewards/internal/dora"
+	"beacon-rewards/internal/dora"
 
 	"gopkg.in/yaml.v3"
 )

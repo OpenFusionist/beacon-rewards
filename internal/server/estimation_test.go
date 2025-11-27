@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"endurance-rewards/internal/dora"
-	"endurance-rewards/internal/utils"
+	"beacon-rewards/internal/dora"
+	"beacon-rewards/internal/utils"
 )
 
 func TestActiveSecondsInWindow(t *testing.T) {

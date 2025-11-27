@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Endurance Rewards! This guide keeps contributions consistent and easy to review.
+Thanks for helping improve Beacon Rewards! This guide keeps contributions consistent and easy to review.
 
 ## Ground rules
 - Use Go 1.23+ and keep changes small and focused.
@@ -9,7 +9,7 @@ Thanks for helping improve Endurance Rewards! This guide keeps contributions con
 - No secrets in the repo. Keep real values in `.env` or your shell.
 
 ## Project setup
-1. Fork and clone the repo, then `cd endurance-rewards`.
+1. Fork and clone the repo, then `cd beacon-rewards`.
 2. Install tools: Go 1.23+, `make`, `docker` (optional), [`golangci-lint`](https://golangci-lint.run/usage/install/), and [`swag`](https://github.com/swaggo/swag) for Swagger generation.
 3. Fetch dependencies:
    ```bash

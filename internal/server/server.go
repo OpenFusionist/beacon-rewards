@@ -1,11 +1,11 @@
 package server
 
 import (
+	"beacon-rewards/internal/config"
+	"beacon-rewards/internal/dora"
+	"beacon-rewards/internal/rewards"
+	"beacon-rewards/internal/utils"
 	"context"
-	"endurance-rewards/internal/config"
-	"endurance-rewards/internal/dora"
-	"endurance-rewards/internal/rewards"
-	"endurance-rewards/internal/utils"
 	"errors"
 	"html/template"
 	"log/slog"
@@ -21,7 +21,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-// @title           Endurance Rewards API
+// @title           Beacon Rewards API
 // @version         1.0
 // @description     REST API for Ethereum validator rewards and deposits analytics.
 // @BasePath        /

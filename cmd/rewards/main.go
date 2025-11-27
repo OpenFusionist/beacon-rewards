@@ -1,11 +1,11 @@
 package main
 
 import (
-	_ "endurance-rewards/docs"
-	"endurance-rewards/internal/config"
-	"endurance-rewards/internal/dora"
-	"endurance-rewards/internal/rewards"
-	"endurance-rewards/internal/server"
+	_ "beacon-rewards/docs"
+	"beacon-rewards/internal/config"
+	"beacon-rewards/internal/dora"
+	"beacon-rewards/internal/rewards"
+	"beacon-rewards/internal/server"
 	"os"
 	"os/signal"
 	"syscall"
@@ -47,7 +47,7 @@ func main() {
 
 	// Setup logging
 	setupLoggerFromEnv()
-	slog.Info("Starting Endurance Rewards Service")
+	slog.Info("Starting Beacon Rewards Service")
 
 	// Load configuration
 	cfg, err := config.Load()

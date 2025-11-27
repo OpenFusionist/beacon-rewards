@@ -1,8 +1,8 @@
 package server
 
 import (
-	"endurance-rewards/internal/dora"
-	"endurance-rewards/internal/utils"
+	"beacon-rewards/internal/dora"
+	"beacon-rewards/internal/utils"
 	"log/slog"
 )
 

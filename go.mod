@@ -1,4 +1,4 @@
-module endurance-rewards
+module beacon-rewards
 
 go 1.23.7
 

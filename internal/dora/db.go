@@ -1,9 +1,9 @@
 package dora
 
 import (
+	"beacon-rewards/internal/config"
 	"context"
 	"database/sql"
-	"endurance-rewards/internal/config"
 	"fmt"
 	"strings"
 

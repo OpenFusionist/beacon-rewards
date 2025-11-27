@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"endurance-rewards/internal/config"
-	"endurance-rewards/internal/utils"
+	"beacon-rewards/internal/config"
+	"beacon-rewards/internal/utils"
 
 	"github.com/gobitfly/eth-rewards/types"
 )

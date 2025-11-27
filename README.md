@@ -1,4 +1,4 @@
-# Endurance Rewards Service
+# Beacon Rewards
 
 A high-performance validator reward statistics service for Ethereum validators. Tracks and caches validator rewards, providing a RESTful API for querying reward data and deposit analytics.
 
@@ -12,7 +12,7 @@ This repo contains both backend (Go) and frontend. Set `ENABLE_FRONTEND=false` t
 
 ```bash
 git clone <repository-url>
-cd endurance-rewards
+cd beacon-rewards
 cp .env.example .env   # edit to match your nodes and DB
 make deps
 make run               # builds, regenerates Swagger, and starts the server
@@ -22,8 +22,8 @@ Visit Swagger at `http://localhost:8080/swagger/index.html`. To disable HTML pag
 
 ## Docker
 ```bash
-docker build -t endurance-rewards .
-docker run -p 8080:8080 --env-file $(pwd)/.env -v $(pwd)/data:/app/data --name endurance-rewards endurance-rewards
+docker build -t beacon-rewards .
+docker run -p 8080:8080 --env-file $(pwd)/.env -v $(pwd)/data:/app/data --name beacon-rewards beacon-rewards
 ```
 Use `--restart=unless-stopped` for long-running deployments.
 
