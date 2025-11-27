@@ -1,10 +1,16 @@
 # Beacon Rewards
 
-A high-performance validator reward statistics service for Ethereum validators. Tracks and caches validator rewards, providing a RESTful API for querying reward data and deposit analytics.
+A high-performance validator reward statistics service for Ethereum validators. Tracks and caches validator rewards, providing a RESTful API for querying reward data and deposit analytics.This repo contains both backend (Go) and frontend. Set `ENABLE_FRONTEND=false` to run backend API only.
 
-## Repository layout
+## Key Features
 
-This repo contains both backend (Go) and frontend. Set `ENABLE_FRONTEND=false` to run backend API only.
+- **No Beacon Explorer API/DB dependency** – Beacon Explorer services are expensive to maintain and operate; this lightweight alternative queries reward data directly from your own infrastructure
+- **Direct Beacon Node RPC** – fetches consensus layer rewards via standard beacon node endpoints (attestation rewards, sync committee rewards, block rewards, proposer assignments)
+- **Execution Node RPC** – calculates execution layer rewards (transaction fees) from your execution client
+- **Dora PostgreSQL** – leverages [Dora](https://github.com/ethpandaops/dora) indexer database for deposit/validator metadata lookups
+
+
+
 
 ## Quick Start
 
