@@ -454,10 +454,22 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 
 	go func() {
 		defer wg.Done()
+		// Get current snapshot and historical data
 		networkSnapshot := s.rewardsService.TotalNetworkRewards()
+		history, err := s.rewardsService.NetworkRewardHistory()
+		if err != nil {
+			slog.Error("Failed to load reward history for APR calculation", "error", err)
+		}
+
+		// Calculate 31-day average APR with outlier removal
+		avgAPR := calculate31DayAverageAPR(history, networkSnapshot)
+		if avgAPR <= 0 {
+			avgAPR = networkSnapshot.ProjectAprPercent
+		}
+
 		estimatedRewards = estimateRecentRewardsForValidators(
 			allValidatorIndices,
-			networkSnapshot.ProjectAprPercent,
+			avgAPR,
 			currentEpoch,
 			estimateWindowEpochs(),
 			effectiveBalances,
