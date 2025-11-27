@@ -14,6 +14,7 @@ type Config struct {
 	ServerPort          string
 	RequestTimeout      time.Duration
 	DefaultAPILimit     int
+	EnableFrontend      bool
 	DepositorLabelsFile string
 
 	// Database configuration.
@@ -45,6 +46,7 @@ func DefaultConfig() *Config {
 		ServerPort:              "8080",
 		RequestTimeout:          10 * time.Second,
 		DefaultAPILimit:         100,
+		EnableFrontend:          true,
 		DepositorLabelsFile:     "depositor-name.yaml",
 		DoraPGURL:               "postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable",
 		BeaconNodeURL:           "http://localhost:5052",
@@ -93,6 +95,13 @@ func LoadFromEnv(lookup func(string) string) (*Config, error) {
 			return nil, fmt.Errorf("DEFAULT_API_LIMIT: %w", err)
 		}
 		cfg.DefaultAPILimit = n
+	}
+	if v := lookup("ENABLE_FRONTEND"); v != "" {
+		enabled, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("ENABLE_FRONTEND: %w", err)
+		}
+		cfg.EnableFrontend = enabled
 	}
 	if v := lookup("DEPOSITOR_LABELS_FILE"); v != "" {
 		cfg.DepositorLabelsFile = v
