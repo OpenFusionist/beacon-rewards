@@ -6,6 +6,7 @@ import (
 	"beacon-rewards/internal/dora"
 	"beacon-rewards/internal/rewards"
 	"beacon-rewards/internal/server"
+	"beacon-rewards/internal/utils"
 	"os"
 	"os/signal"
 	"syscall"
@@ -55,6 +56,9 @@ func main() {
 		slog.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
 	}
+
+	// Configure genesis timestamp for epoch conversions.
+	utils.SetGenesisTimestamp(cfg.GenesisTimestamp)
 	logConfig(cfg)
 
 	var doraDB *dora.DB
@@ -114,5 +118,6 @@ func logConfig(cfg *config.Config) {
 		"default_api_limit", cfg.DefaultAPILimit,
 		"depositor_labels_file", cfg.DepositorLabelsFile,
 		"frontend_enabled", cfg.EnableFrontend,
+		"genesis_timestamp", cfg.GenesisTimestamp,
 	)
 }

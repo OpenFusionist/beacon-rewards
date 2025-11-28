@@ -83,6 +83,7 @@ func TestLoadOverridesAndErrors(t *testing.T) {
 		t.Setenv("DEFAULT_API_LIMIT", "250")
 		t.Setenv("ENABLE_FRONTEND", "false")
 		t.Setenv("REWARDS_HISTORY_FILE", "/tmp/history.jsonl")
+		t.Setenv("GENESIS_TIMESTAMP", "1710000000")
 
 		cfg, err := Load()
 		if err != nil {
@@ -104,12 +105,22 @@ func TestLoadOverridesAndErrors(t *testing.T) {
 		if cfg.RewardsHistoryFile != "/tmp/history.jsonl" {
 			t.Fatalf("RewardsHistoryFile = %s, want /tmp/history.jsonl", cfg.RewardsHistoryFile)
 		}
+		if cfg.GenesisTimestamp != 1710000000 {
+			t.Fatalf("GenesisTimestamp = %d, want 1710000000", cfg.GenesisTimestamp)
+		}
 	})
 
 	t.Run("invalid duration yields error", func(t *testing.T) {
 		t.Setenv("REQUEST_TIMEOUT", "not-a-duration")
 		if _, err := Load(); err == nil {
 			t.Fatalf("expected error for invalid REQUEST_TIMEOUT")
+		}
+	})
+
+	t.Run("invalid genesis timestamp yields error", func(t *testing.T) {
+		t.Setenv("GENESIS_TIMESTAMP", "-1")
+		if _, err := Load(); err == nil {
+			t.Fatalf("expected error for invalid GENESIS_TIMESTAMP")
 		}
 	})
 }

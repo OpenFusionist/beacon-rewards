@@ -46,6 +46,7 @@ Set environment variables or use `.env` (see `.env.example`):
 | `DORA_PG_URL` | Dora Postgres URL (required for deposit endpoints) | `postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable` |
 | `DEPOSITOR_LABELS_FILE` | YAML mapping addresses to labels | `depositor-name.yaml` |
 | `START_EPOCH` | First epoch to backfill (0 defaults to cache window start) | `0` |
+| `GENESIS_TIMESTAMP` | Beacon chain genesis timestamp (Unix seconds) for epoch/time conversion | `1709532000` |
 | `EPOCH_CHECK_INTERVAL` | Polling interval for live sync | `12s` |
 | `EPOCH_PROCESS_MAX_RETRIES` | Max retries per epoch before skipping | `5` |
 | `EPOCH_PROCESS_BASE_BACKOFF` | Initial backoff for epoch retries | `2s` |
