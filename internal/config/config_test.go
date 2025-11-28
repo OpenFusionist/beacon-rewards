@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestEnableFrontendFlag(t *testing.T) {
 	tests := []struct {
@@ -59,4 +62,54 @@ func TestEnableFrontendFlag(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestListenAddress(t *testing.T) {
+	cfg := &Config{
+		ServerAddress: "127.0.0.1",
+		ServerPort:    "9090",
+	}
+
+	if got, want := cfg.ListenAddress(), "127.0.0.1:9090"; got != want {
+		t.Fatalf("ListenAddress = %s, want %s", got, want)
+	}
+}
+
+func TestLoadOverridesAndErrors(t *testing.T) {
+	t.Run("overrides defaults via env", func(t *testing.T) {
+		t.Setenv("SERVER_ADDRESS", "1.2.3.4")
+		t.Setenv("SERVER_PORT", "9999")
+		t.Setenv("REQUEST_TIMEOUT", "15s")
+		t.Setenv("DEFAULT_API_LIMIT", "250")
+		t.Setenv("ENABLE_FRONTEND", "false")
+		t.Setenv("REWARDS_HISTORY_FILE", "/tmp/history.jsonl")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+
+		if cfg.ServerAddress != "1.2.3.4" || cfg.ServerPort != "9999" {
+			t.Fatalf("server address/port not applied: %+v", cfg)
+		}
+		if cfg.RequestTimeout != 15*time.Second {
+			t.Fatalf("RequestTimeout = %v, want %v", cfg.RequestTimeout, 15*time.Second)
+		}
+		if cfg.DefaultAPILimit != 250 {
+			t.Fatalf("DefaultAPILimit = %d, want 250", cfg.DefaultAPILimit)
+		}
+		if cfg.EnableFrontend {
+			t.Fatalf("EnableFrontend expected false after env override")
+		}
+		if cfg.RewardsHistoryFile != "/tmp/history.jsonl" {
+			t.Fatalf("RewardsHistoryFile = %s, want /tmp/history.jsonl", cfg.RewardsHistoryFile)
+		}
+	})
+
+	t.Run("invalid duration yields error", func(t *testing.T) {
+		t.Setenv("REQUEST_TIMEOUT", "not-a-duration")
+		if _, err := Load(); err == nil {
+			t.Fatalf("expected error for invalid REQUEST_TIMEOUT")
+		}
+	})
 }

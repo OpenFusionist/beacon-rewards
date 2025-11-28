@@ -10,6 +10,13 @@ import (
 	"beacon-rewards/internal/utils"
 )
 
+func TestEstimateWindowEpochs(t *testing.T) {
+	expected := uint64(estimateWindowDays*secondsPerDay) / uint64(utils.SECONDS_PER_EPOCH)
+	if got := estimateWindowEpochs(); got != expected {
+		t.Fatalf("estimateWindowEpochs = %d, want %d", got, expected)
+	}
+}
+
 func TestActiveSecondsInWindow(t *testing.T) {
 	seconds := activeSecondsInWindow(dora.ValidatorLifecycle{
 		ActivationEpoch: 10,
@@ -230,7 +237,7 @@ func TestCalculate31DayAverageAPR(t *testing.T) {
 				{WindowStart: now.Add(-24 * time.Hour), ProjectAprPercent: 11.5},
 			},
 			currentSnapshot: &rewards.NetworkRewardSnapshot{ProjectAprPercent: 100.0}, // outlier
-			expectedMin:     10.5,                                                      // average of 10.0, 10.5, 11.0, 11.5 = 10.75
+			expectedMin:     10.5,                                                     // average of 10.0, 10.5, 11.0, 11.5 = 10.75
 			expectedMax:     11.0,
 		},
 		{
