@@ -826,9 +826,11 @@ body[data-current-path^="/rewards/network"] {
     color: var(--text-primary);
 }
 
-.window-subtext {
-    color: var(--text-secondary);
-    font-size: 0.95rem;
+.window-subvalue {
+    font-size: 1.4rem;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
 }
 
 .chip {

@@ -588,11 +588,8 @@ function renderNetworkStats(current, history) {
             <div class="window-highlight">
                 <div class="window-label">Active validators</div>
                 <div class="window-value">${formatNumber(current.active_validator_count)}</div>
-                <div class="window-subtext">Total effective balance: ${formatNumber(formatGweiToAce(current.total_effective_balance_gwei))} ACE</div>
-                <div class="chip">
-                    <span class="chip-dot"></span>
-                    <span>Window end: ${formatTime(current.window_end)}</span>
-                </div>
+                <div class="window-label">Total effective balance</div>
+                <div class="window-subvalue">${formatNumber(formatGweiToAce(current.total_effective_balance_gwei))} ACE</div>
             </div>
         </section>
 
