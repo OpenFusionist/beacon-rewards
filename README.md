@@ -56,9 +56,9 @@ Set environment variables or use `.env` (see `.env.example`):
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
 | `LOG_FORMAT` | `text` or `json` | `text` |
 
-Ensure the `data/` directory is writable if you keep the default `REWARDS_HISTORY_FILE`.
+- Ensure the `data/` directory is writable if you keep the default `REWARDS_HISTORY_FILE`.
 
-Backfills are meant to cover recent history only. `BACKFILL_LOOKBACK` is rounded to the nearest epoch boundary; using very large backfill ranges can lead to heavy memory usage and RPC load.
+- Backfills are intended to cover recent history only. `BACKFILL_LOOKBACK` is rounded to the nearest epoch boundary. Larger windows can marginally improve initial reward accuracy, but returns diminish quickly; smaller values trade a tiny precision loss for faster startup. This is not an archive-mode reprocessing tool, very large ranges will significantly increase memory usage and RPC traffic. Therefore, we recommend using a window of no more than `24h` for backfills.
 
 ## API
 - `GET /health`
