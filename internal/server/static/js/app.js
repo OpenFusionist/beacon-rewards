@@ -611,14 +611,12 @@ function renderNetworkStats(current, history) {
                 </div>
             </article>
             <article class="metric-card">
-                <div class="metric-label">Consensus rewards</div>
+                <div class="metric-label">Consensus rewards (ACE)</div>
                 <div class="metric-value">${formatNumber(formatGweiToAce(current.cl_rewards_gwei))}</div>
-                <div class="metric-subtext">Unit: ACE</div>
             </article>
             <article class="metric-card">
-                <div class="metric-label">Execution rewards</div>
+                <div class="metric-label">Execution rewards (ACE)</div>
                 <div class="metric-value">${formatNumber(formatGweiToAce(current.el_rewards_gwei))}</div>
-                <div class="metric-subtext">Unit: ACE</div>
             </article>
         </section>
 
