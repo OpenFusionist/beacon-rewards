@@ -48,6 +48,18 @@ func (s *Server) applyDepositorLabels(stats []dora.DepositorStat) {
 	}
 }
 
+func (s *Server) applyWithdrawalLabels(stats []dora.WithdrawalStat) {
+	if len(stats) == 0 || len(s.depositorLabels) == 0 {
+		return
+	}
+
+	for i := range stats {
+		if label, ok := s.lookupDepositorLabel(stats[i].WithdrawalAddress); ok {
+			stats[i].Label = label
+		}
+	}
+}
+
 func (s *Server) lookupDepositorLabel(address string) (string, bool) {
 	if len(s.depositorLabels) == 0 || strings.TrimSpace(address) == "" {
 		return "", false

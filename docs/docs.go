@@ -85,7 +85,7 @@ const docTemplate = `{
                 "tags": [
                     "Deposits"
                 ],
-                "summary": "aggregates deposit amounts \u0026\u0026 validator counts by withdrawal address and returns top N by validator counts.",
+                "summary": "Aggregates deposit totals and validator counts by withdrawal address and returns the top set.",
                 "parameters": [
                     {
                         "type": "integer",

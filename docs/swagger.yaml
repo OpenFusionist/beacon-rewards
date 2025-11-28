@@ -157,8 +157,8 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: aggregates deposit amounts && validator counts by withdrawal address
-        and returns top N by validator counts.
+      summary: Aggregates deposit totals and validator counts by withdrawal address
+        and returns the top set.
       tags:
       - Deposits
   /health:

@@ -1,0 +1,40 @@
+{{template "base.html" .}}
+
+{{define "title"}}Top Staking - Beacon Rewards{{end}}
+
+{{define "content"}}
+<div id="top-withdrawals-view" class="page-shell" data-view="top-withdrawals">
+    <section class="page-header">
+        <div>
+            <div class="page-eyebrow">Validator Leaderboard</div>
+            <h1 class="page-title">Top staking addresses</h1>
+            <p class="page-description">
+                Aggregates validators by withdrawal address with deposit totals, activity, and effective balance. Click any header to change the sort.
+            </p>
+            <div class="meta-row">
+                <span class="meta-pill" id="top-withdrawals-summary">Loading leaderboard</span>
+                <span class="meta-pill" id="top-withdrawals-sort">Sort: -</span>
+                <span class="meta-pill">Unit: ACE</span>
+                <span class="meta-pill">Tip: Click headers to sort</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="table-card">
+        <div class="table-toolbar">
+            <div>
+                <div class="table-title">Staking leaderboard</div>
+                <div class="table-subtitle">Indexes validators by withdrawal address with totals and status</div>
+            </div>
+            <div class="table-note" id="top-withdrawals-note">Loading...</div>
+        </div>
+        <div id="top-withdrawals-table">
+            <div class="loading">Loading...</div>
+        </div>
+    </section>
+</div>
+{{end}}
+
+{{define "scripts"}}
+{{/* Scripts handled by SPA app.js */}}
+{{end}}

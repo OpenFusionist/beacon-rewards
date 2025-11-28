@@ -96,19 +96,19 @@ func (s *Server) setupRoutes() {
 
 		// Page routes (HTML pages) - order matters, more specific routes first
 		s.router.GET("/", func(c *gin.Context) {
-			slog.Info("Root path accessed, redirecting to top-deposits")
-			c.Redirect(http.StatusFound, "/deposits/top-deposits")
+			slog.Info("Root path accessed, redirecting to top-withdrawals")
+			c.Redirect(http.StatusFound, "/deposits/top-withdrawals")
 		})
 
 		slog.Info("Registering routes with frontend enabled",
-			"top-deposits", "/deposits/top-deposits",
+			"top-withdrawals", "/deposits/top-withdrawals",
 			"network-rewards", "/rewards/network",
 			"address-rewards", "/rewards/by-address")
 	} else {
 		slog.Info("Registering API-only routes; frontend disabled")
 	}
 
-	s.router.GET("/deposits/top-deposits", s.topDepositsPageOrAPIHandler)
+	s.router.GET("/deposits/top-withdrawals", s.topWithdrawalsPageOrAPIHandler)
 	s.router.GET("/rewards/network", s.networkRewardsPageOrAPIHandler)
 	if s.frontendEnabled {
 		s.router.GET("/rewards/by-address", s.addressRewardsPageHandler)
@@ -120,9 +120,7 @@ func (s *Server) setupRoutes() {
 	// API endpoints
 	s.router.POST("/rewards", s.rewardsHandler)
 	s.router.POST("/rewards/by-address", s.addressRewardsHandler)
-
-	// get top deposits by witrdraw address
-	s.router.GET("/deposits/top-withdrawals", s.topWithdrawalsHandler)
+	s.router.GET("/deposits/top-deposits", s.topDepositsHandler)
 
 	// Swagger UI (requires generated docs; run `swag init` and import docs package in main)
 	//http://localhost:8080/swagger/index.html
@@ -200,8 +198,8 @@ func (s *Server) topDepositsHandler(c *gin.Context) {
 	})
 }
 
-// topWithdrawalsHandler aggregates deposit amounts && validator counts by withdrawal address and returns top N by validator counts.
-// @Summary      aggregates deposit amounts && validator counts by withdrawal address and returns top N by validator counts.
+// topWithdrawalsAPIHandler aggregates deposit amounts and validator counts by withdrawal address and returns the top set.
+// @Summary      Aggregates deposit totals and validator counts by withdrawal address and returns the top set.
 // @Tags         Deposits
 // @Produce      json
 // @Param        limit    query     int     false  "Number of results to return"  default(100)
@@ -211,13 +209,18 @@ func (s *Server) topDepositsHandler(c *gin.Context) {
 // @Failure      503     {object}  map[string]string
 // @Failure      500     {object}  map[string]string
 // @Router       /deposits/top-withdrawals [get]
-func (s *Server) topWithdrawalsHandler(c *gin.Context) {
+func (s *Server) topWithdrawalsAPIHandler(c *gin.Context) {
 	if !s.ensureDoraDB(c) {
 		return
 	}
 
 	s.respondWithTop(c, func(ctx context.Context, limit int, sortBy string, order string) (any, error) {
-		return s.doraDB.TopWithdrawalAddresses(ctx, limit, sortBy, order)
+		stats, err := s.doraDB.TopWithdrawalAddresses(ctx, limit, sortBy, order)
+		if err != nil {
+			return nil, err
+		}
+		s.applyWithdrawalLabels(stats)
+		return stats, nil
 	})
 }
 
@@ -584,23 +587,23 @@ func loggingMiddleware() gin.HandlerFunc {
 
 // Page handlers
 
-func (s *Server) topDepositsPageOrAPIHandler(c *gin.Context) {
-	slog.Info("topDepositsPageOrAPIHandler called",
+func (s *Server) topWithdrawalsPageOrAPIHandler(c *gin.Context) {
+	slog.Info("topWithdrawalsPageOrAPIHandler called",
 		"path", c.Request.URL.Path,
 		"method", c.Request.Method,
 		"hx-request", c.GetHeader("HX-Request"),
 		"accept", c.GetHeader("Accept"))
 
 	if !s.frontendEnabled {
-		slog.Info("Frontend disabled, serving top-deposits as JSON")
-		s.topDepositsAPIHandler(c)
+		slog.Info("Frontend disabled, serving top-withdrawals as JSON")
+		s.topWithdrawalsAPIHandler(c)
 		return
 	}
 
 	// Check if this is an HTMX request (for table fragment) or API request
 	if c.GetHeader("HX-Request") == "true" {
 		slog.Info("Handling as HTMX request for table fragment")
-		s.topDepositsTableHandler(c)
+		s.topWithdrawalsTableHandler(c)
 		return
 	}
 
@@ -608,7 +611,7 @@ func (s *Server) topDepositsPageOrAPIHandler(c *gin.Context) {
 	accept := c.GetHeader("Accept")
 	if accept != "" && strings.Contains(accept, "application/json") {
 		slog.Info("Handling as JSON API request")
-		s.topDepositsAPIHandler(c)
+		s.topWithdrawalsAPIHandler(c)
 		return
 	}
 
@@ -629,7 +632,7 @@ func (s *Server) topDepositsPageOrAPIHandler(c *gin.Context) {
 		order = "desc"
 	}
 
-	slog.Info("Rendering top-deposits.html template",
+	slog.Info("Rendering top-withdrawals.html template",
 		"path", c.Request.URL.Path,
 		"limit", limit,
 		"sortBy", sortBy,
@@ -642,25 +645,10 @@ func (s *Server) topDepositsPageOrAPIHandler(c *gin.Context) {
 		"CurrentPath": c.Request.URL.Path,
 	}
 
-	c.HTML(http.StatusOK, "top-deposits.html", data)
+	c.HTML(http.StatusOK, "top-withdrawals.html", data)
 }
 
-func (s *Server) topDepositsAPIHandler(c *gin.Context) {
-	if !s.ensureDoraDB(c) {
-		return
-	}
-
-	s.respondWithTop(c, func(ctx context.Context, limit int, sortBy string, order string) (any, error) {
-		stats, err := s.doraDB.TopDepositorAddresses(ctx, limit, sortBy, order)
-		if err != nil {
-			return nil, err
-		}
-		s.applyDepositorLabels(stats)
-		return stats, nil
-	})
-}
-
-func (s *Server) topDepositsTableHandler(c *gin.Context) {
+func (s *Server) topWithdrawalsTableHandler(c *gin.Context) {
 	if !s.ensureDoraDB(c) {
 		return
 	}
@@ -683,20 +671,19 @@ func (s *Server) topDepositsTableHandler(c *gin.Context) {
 	ctx, cancel := s.requestContext(c)
 	defer cancel()
 
-	stats, err := s.doraDB.TopDepositorAddresses(ctx, limit, sortBy, order)
+	stats, err := s.doraDB.TopWithdrawalAddresses(ctx, limit, sortBy, order)
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{"error": err.Error()})
 		return
 	}
-	s.applyDepositorLabels(stats)
+	s.applyWithdrawalLabels(stats)
 
 	// Convert stats to map for template
 	results := make([]map[string]interface{}, len(stats))
 	for i, stat := range stats {
 		results[i] = map[string]interface{}{
-			"depositor_address":              stat.DepositorAddress,
-			"depositor_label":                stat.DepositorLabel,
 			"withdrawal_address":             stat.WithdrawalAddress,
+			"label":                          stat.Label,
 			"total_deposit":                  stat.TotalDeposit,
 			"validators_total":               stat.ValidatorsTotal,
 			"active":                         stat.Active,
@@ -712,7 +699,7 @@ func (s *Server) topDepositsTableHandler(c *gin.Context) {
 		"order":   order,
 	}
 
-	c.HTML(http.StatusOK, "top-deposits-table.html", data)
+	c.HTML(http.StatusOK, "top-withdrawals-table.html", data)
 }
 
 func (s *Server) networkRewardsPageOrAPIHandler(c *gin.Context) {

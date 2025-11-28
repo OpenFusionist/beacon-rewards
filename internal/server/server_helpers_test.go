@@ -186,6 +186,18 @@ func TestLoadAndApplyDepositorLabels(t *testing.T) {
 	if _, ok := s.lookupDepositorLabel(""); ok {
 		t.Fatalf("empty address should not match a label")
 	}
+
+	withdrawals := []dora.WithdrawalStat{
+		{WithdrawalAddress: "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"},
+		{WithdrawalAddress: "0x123"},
+	}
+	s.applyWithdrawalLabels(withdrawals)
+	if withdrawals[0].Label != "Label Two" {
+		t.Fatalf("expected withdrawal label to be applied, got %q", withdrawals[0].Label)
+	}
+	if withdrawals[1].Label != "" {
+		t.Fatalf("unexpected withdrawal label applied: %q", withdrawals[1].Label)
+	}
 }
 
 func TestAvailableTemplateNames(t *testing.T) {

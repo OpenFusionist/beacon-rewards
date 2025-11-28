@@ -66,8 +66,8 @@ Backfills are meant to cover recent history only. `BACKFILL_LOOKBACK` is rounded
 - `POST /rewards` – validator rewards for specific indices
 - `GET /rewards/network` – aggregate rewards snapshot
 - `POST /rewards/by-address` – rewards aggregated by depositor/withdrawal address
-- `GET /deposits/top-withdrawals` – top withdrawal addresses
-- `GET /deposits/top-deposits` – top depositor addresses
+- `GET /deposits/top-withdrawals` – staking leaderboard indexed by withdrawal address
+- `GET /deposits/top-deposits` – staking leaderboard indexed by depositor address
 
 Full request/response shapes are documented in Swagger (`/swagger/index.html`).
 

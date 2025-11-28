@@ -52,6 +52,7 @@ func (d *DB) Close() {
 // WithdrawalStat represents aggregated deposits for a withdrawal address.
 type WithdrawalStat struct {
 	WithdrawalAddress string `json:"withdrawal_address"`
+	Label             string `json:"label,omitempty"`
 	ValidatorStatus
 }
 

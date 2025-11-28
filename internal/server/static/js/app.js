@@ -9,7 +9,7 @@ let cleanupCurrentView = () => { };
 let networkChart = null;
 
 const routes = [
-    { name: 'topDeposits', match: (path) => path.startsWith('/deposits/top-deposits'), render: renderTopDeposits },
+    { name: 'topWithdrawals', match: (path) => path.startsWith('/deposits/top-withdrawals'), render: renderTopWithdrawals },
     { name: 'networkRewards', match: (path) => path.startsWith('/rewards/network'), render: renderNetworkRewards },
     { name: 'addressRewards', match: (path) => path.startsWith('/rewards/by-address'), render: renderAddressRewards },
 ];
@@ -174,7 +174,7 @@ function renderError(message) {
     return `<div class="error">${message}</div>`;
 }
 
-function footnotesTopDeposits() {
+function footnotesTopWithdrawals() {
     return '';
 }
 
@@ -275,19 +275,19 @@ function runCopyHandler() {
     });
 }
 
-function topDepositsTemplate() {
+function topWithdrawalsTemplate() {
     return `
-        <div id="top-deposits-view" class="page-shell" data-view="top-deposits">
+        <div id="top-withdrawals-view" class="page-shell" data-view="top-withdrawals">
             <section class="page-header">
                 <div>
-                    <div class="page-eyebrow">Depositor Leaderboard</div>
-                    <h1 class="page-title">Top Depositors</h1>
+                    <div class="page-eyebrow">Validator Leaderboard</div>
+                    <h1 class="page-title">Top staking addresses</h1>
                     <p class="page-description">
-                        Aggregates leading deposit addresses with validator scale, activity, and effective balance. Click any header to change the sort.
+                        Aggregates validators by withdrawal address with deposit totals, activity, and effective balance. Click any header to change the sort.
                     </p>
                     <div class="meta-row">
-                        <span class="meta-pill" id="top-deposits-summary">Loading leaderboard</span>
-                        <span class="meta-pill" id="top-deposits-sort">Sort: -</span>
+                        <span class="meta-pill" id="top-withdrawals-summary">Loading leaderboard</span>
+                        <span class="meta-pill" id="top-withdrawals-sort">Sort: -</span>
                         <span class="meta-pill">Unit: ACE</span>
                         <span class="meta-pill">Tip: Click headers to sort</span>
                     </div>
@@ -297,21 +297,21 @@ function topDepositsTemplate() {
             <section class="table-card">
                 <div class="table-toolbar">
                     <div>
-                        <div class="table-title">Depositor leaderboard</div>
-                        <div class="table-subtitle">Includes withdrawal address, deposit total, validator status, and effective balance</div>
+                        <div class="table-title">Staking leaderboard</div>
+                        <div class="table-subtitle">Indexes validators by withdrawal address with totals and status</div>
                     </div>
-                    <div class="table-note" id="top-deposits-note">Loading...</div>
+                    <div class="table-note" id="top-withdrawals-note">Loading...</div>
                 </div>
-                <div id="top-deposits-table">
+                <div id="top-withdrawals-table">
                     <div class="loading">Loading...</div>
                 </div>
             </section>
         </div>
-        ${footnotesTopDeposits()}
+        ${footnotesTopWithdrawals()}
     `;
 }
 
-async function renderTopDeposits({ url, ticket, cleaner }) {
+async function renderTopWithdrawals({ url, ticket, cleaner }) {
     const params = url.searchParams;
     const state = {
         limit: Math.max(1, Number(params.get('limit')) || 30),
@@ -331,11 +331,11 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
 
     const resolveSortLabel = (key) => sortLabels[key] || key;
 
-    appRoot.innerHTML = topDepositsTemplate();
-    const tableContainer = appRoot.querySelector('#top-deposits-table');
-    const summary = appRoot.querySelector('#top-deposits-summary');
-    const sortMeta = appRoot.querySelector('#top-deposits-sort');
-    const note = appRoot.querySelector('#top-deposits-note');
+    appRoot.innerHTML = topWithdrawalsTemplate();
+    const tableContainer = appRoot.querySelector('#top-withdrawals-table');
+    const summary = appRoot.querySelector('#top-withdrawals-summary');
+    const sortMeta = appRoot.querySelector('#top-withdrawals-sort');
+    const note = appRoot.querySelector('#top-withdrawals-note');
 
     const setQueryParams = () => {
         const nextUrl = new URL(url.toString());
@@ -368,18 +368,13 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
                 <tr>
                     <td><span class="${rankClass}">${index + 1}</span></td>
                     <td>
-                        <div class="address-with-copy address-copy-target" data-address="${item.depositor_address}" title="${item.depositor_address}">
-                            <span class="address">${formatAddress(item.depositor_address)}</span>
-                        </div>
-                    </td>
-                    <td>
                         ${item.withdrawal_address ? `
                             <div class="address-with-copy address-copy-target" data-address="${item.withdrawal_address}" title="${item.withdrawal_address}">
                                 <span class="address">${formatAddress(item.withdrawal_address)}</span>
                             </div>
                         ` : '-'}
                     </td>
-                    <td>${item.depositor_label || '-'}</td>
+                    <td>${item.label || '-'}</td>
                     <td>${formatGweiToAce(item.total_deposit)}</td>
                     <td>${formatNumber(item.validators_total)}</td>
                     <td><span class="badge badge-success">${formatNumber(item.active)}</span></td>
@@ -394,23 +389,21 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
             <div class="table-container">
                 <table>
                     <colgroup>
-                        <col class="col-rank">
-                        <col class="col-address">
-                        <col class="col-withdrawal">
-                        <col class="col-label">
-                        <col class="col-total-deposit">
-                        <col class="col-validators">
-                        <col class="col-active">
-                        <col class="col-slashed">
-                        <col class="col-voluntary">
+                    <col class="col-rank">
+                    <col class="col-withdrawal">
+                    <col class="col-label">
+                    <col class="col-total-deposit">
+                    <col class="col-validators">
+                    <col class="col-active">
+                    <col class="col-slashed">
+                    <col class="col-voluntary">
                         <col class="col-effective-balance">
                     </colgroup>
                 <thead>
                     <tr>
                         <th><abbr class="header-abbr" data-tooltip="Ranking" aria-label="Ranking position">Rank</abbr></th>
-                        <th><abbr class="header-abbr" data-tooltip="Depositor address" aria-label="Depositor address">Addr</abbr></th>
                         <th><abbr class="header-abbr" data-tooltip="Withdrawal address" aria-label="Withdrawal address">Wdr</abbr></th>
-                        <th><abbr class="header-abbr" data-tooltip="Label for the address" aria-label="Label for the address">Label</abbr></th>
+                        <th><abbr class="header-abbr" data-tooltip="Label for the withdrawal address" aria-label="Label for the withdrawal address">Label</abbr></th>
                         <th class="sortable" data-sort="total_deposit"><abbr class="header-abbr" data-tooltip="Total deposit amount (ACE)" aria-label="Total deposit amount (ACE)">Total deposited</abbr></th>
                         <th class="sortable" data-sort="validators_total"><abbr class="header-abbr" data-tooltip="Total Number of validators" aria-label="Total Number of validators">Tot</abbr></th>
                         <th class="sortable" data-sort="active"><abbr class="header-abbr" data-tooltip="Active validators" aria-label="Active validators">Act</abbr></th>
@@ -433,7 +426,7 @@ async function renderTopDeposits({ url, ticket, cleaner }) {
         tableContainer.innerHTML = '<div class="loading">Loading...</div>';
         let response;
         try {
-            response = await fetch(`/deposits/top-deposits?limit=${state.limit}&sort_by=${state.sortBy}&order=${state.order}`, {
+            response = await fetch(`/deposits/top-withdrawals?limit=${state.limit}&sort_by=${state.sortBy}&order=${state.order}`, {
                 headers: { Accept: 'application/json' },
             });
         } catch (err) {
