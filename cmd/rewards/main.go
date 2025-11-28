@@ -105,19 +105,20 @@ func main() {
 }
 
 func logConfig(cfg *config.Config) {
-	slog.Info(
-		"Configuration loaded",
+	args := []any{
 		"listen_address", cfg.ListenAddress(),
 		"beacon_node", cfg.BeaconNodeURL,
 		"execution_node", cfg.ExecutionNodeURL,
 		"cache_reset_interval", cfg.CacheResetInterval,
 		"epoch_check_interval", cfg.EpochCheckInterval,
 		"backfill_concurrency", cfg.BackfillConcurrency,
-		"start_epoch", cfg.StartEpoch,
+		"backfill_lookback", cfg.BackfillLookback,
 		"request_timeout", cfg.RequestTimeout,
 		"default_api_limit", cfg.DefaultAPILimit,
 		"depositor_labels_file", cfg.DepositorLabelsFile,
 		"frontend_enabled", cfg.EnableFrontend,
 		"genesis_timestamp", cfg.GenesisTimestamp,
-	)
+	}
+
+	slog.Info("Configuration loaded", args...)
 }

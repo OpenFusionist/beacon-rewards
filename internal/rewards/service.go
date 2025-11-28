@@ -106,17 +106,22 @@ func (s *Service) SetDoraDB(db *dora.DB) {
 func (s *Service) Start() error {
 	slog.Info("Starting rewards service")
 
-	// Calculate start epoch
-	startEpoch := s.config.StartEpoch
-	if startEpoch == 0 {
-		// Default: Start from cache window start (00:00 UTC+8)
-		startEpoch = utils.TimeToEpoch(s.cacheWindowStartTime())
-	}
+	startEpoch := s.startEpoch(time.Now())
 
 	go s.syncRoutine(startEpoch)
 	go s.cacheResetTimerWithClock(time.Now)
 
 	return nil
+}
+
+func (s *Service) startEpoch(now time.Time) uint64 {
+	if s.config.BackfillLookback > 0 {
+		startTime := now.Add(-s.config.BackfillLookback)
+		return utils.TimeToEpoch(startTime)
+	}
+
+	// Default: Start from cache window start (00:00 UTC+8)
+	return utils.TimeToEpoch(s.cacheWindowStartTime())
 }
 
 // Stop gracefully stops the service

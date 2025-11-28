@@ -161,3 +161,34 @@ func TestCacheResetTimer(t *testing.T) {
 		t.Fatalf("cache window start not updated near reset time: got %s want around %s", windowStart, expectedWindowStart)
 	}
 }
+
+func TestStartEpochUsesLookback(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.RewardsHistoryFile = filepath.Join(t.TempDir(), "history.jsonl")
+	cfg.BackfillLookback = 6 * time.Hour
+	svc := NewService(cfg)
+
+	now := time.Unix(utils.GenesisTimestamp(), 0).Add(time.Duration(100*utils.SECONDS_PER_EPOCH) * time.Second)
+	expected := utils.TimeToEpoch(now.Add(-cfg.BackfillLookback))
+
+	if got := svc.startEpoch(now); got != expected {
+		t.Fatalf("start epoch from lookback mismatch: got %d want %d", got, expected)
+	}
+}
+
+func TestStartEpochDefaultsToCacheWindow(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.RewardsHistoryFile = filepath.Join(t.TempDir(), "history.jsonl")
+	cfg.BackfillLookback = 0
+	svc := NewService(cfg)
+
+	windowStart := time.Unix(utils.GenesisTimestamp(), 0).Add(time.Duration(20*utils.SECONDS_PER_EPOCH) * time.Second)
+	svc.setCacheWindowStart(windowStart)
+
+	now := windowStart.Add(time.Hour)
+	expected := utils.TimeToEpoch(windowStart)
+
+	if got := svc.startEpoch(now); got != expected {
+		t.Fatalf("default start epoch mismatch: got %d want %d", got, expected)
+	}
+}

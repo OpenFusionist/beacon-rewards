@@ -32,13 +32,13 @@ type Config struct {
 
 	// Epoch processing configuration.
 	EpochCheckInterval      time.Duration
-	StartEpoch              uint64
 	EpochProcessMaxRetries  int
 	EpochProcessBaseBackoff time.Duration
 	EpochProcessMaxBackoff  time.Duration
 
 	// Backfill configuration.
 	BackfillConcurrency int
+	BackfillLookback    time.Duration // Relative window to backfill before startup. Zero uses the cache window start.
 }
 
 // DefaultConfig returns a default configuration.
@@ -57,11 +57,11 @@ func DefaultConfig() *Config {
 		CacheResetInterval:      24 * time.Hour,
 		RewardsHistoryFile:      "data/reward_history.jsonl",
 		EpochCheckInterval:      12 * time.Second,
-		StartEpoch:              0,
 		EpochProcessMaxRetries:  5,
 		EpochProcessBaseBackoff: 2 * time.Second,
 		EpochProcessMaxBackoff:  30 * time.Second,
 		BackfillConcurrency:     16,
+		BackfillLookback:        0,
 	}
 }
 
@@ -145,19 +145,22 @@ func LoadFromEnv(lookup func(string) string) (*Config, error) {
 		}
 		cfg.EpochCheckInterval = d
 	}
-	if v := lookup("START_EPOCH"); v != "" {
-		n, err := strconv.ParseUint(v, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("START_EPOCH: %w", err)
-		}
-		cfg.StartEpoch = n
-	}
 	if v := lookup("BACKFILL_CONCURRENCY"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
 			return nil, fmt.Errorf("BACKFILL_CONCURRENCY: %w", err)
 		}
 		cfg.BackfillConcurrency = n
+	}
+	if v := lookup("BACKFILL_LOOKBACK"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("BACKFILL_LOOKBACK: %w", err)
+		}
+		if d < 0 {
+			return nil, fmt.Errorf("BACKFILL_LOOKBACK: must be non-negative")
+		}
+		cfg.BackfillLookback = d
 	}
 	if v := lookup("EPOCH_PROCESS_MAX_RETRIES"); v != "" {
 		n, err := strconv.Atoi(v)
