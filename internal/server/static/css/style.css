@@ -800,6 +800,7 @@ body[data-current-path^="/rewards/network"] {
     font-size: 0.95rem;
     font-family: var(--font-mono);
     color: var(--text-primary);
+    white-space: nowrap;
 }
 
 .window-highlight {

@@ -44,9 +44,24 @@ function formatNumber(num) {
     return new Intl.NumberFormat('en-US').format(parsed);
 }
 
+const utcDateFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'UTC',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+});
+
+const utcTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'UTC',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+});
+
 function formatTime(value) {
     if (!value) return '';
-    return new Date(value).toLocaleString('en-US', { timeZone: 'UTC' }) + ' UTC';
+    const date = new Date(value);
+    return `${utcDateFormatter.format(date)} ${utcTimeFormatter.format(date)} UTC`;
 }
 
 function formatDuration(seconds) {
