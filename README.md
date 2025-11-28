@@ -52,7 +52,6 @@ Set environment variables or use `.env` (see `.env.example`):
 | `EPOCH_PROCESS_BASE_BACKOFF` | Initial backoff for epoch retries | `2s` |
 | `EPOCH_PROCESS_MAX_BACKOFF` | Max backoff for epoch retries | `30s` |
 | `BACKFILL_CONCURRENCY` | Workers used during backfill | `16` |
-| `CACHE_RESET_INTERVAL` | Interval to reset cached rewards window | `24h` |
 | `REWARDS_HISTORY_FILE` | Path to append-only reward history log | `data/reward_history.jsonl` |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
 | `LOG_FORMAT` | `text` or `json` | `text` |

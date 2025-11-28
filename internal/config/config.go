@@ -128,13 +128,6 @@ func LoadFromEnv(lookup func(string) string) (*Config, error) {
 	if v := lookup("EXECUTION_NODE_URL"); v != "" {
 		cfg.ExecutionNodeURL = v
 	}
-	if v := lookup("CACHE_RESET_INTERVAL"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return nil, fmt.Errorf("CACHE_RESET_INTERVAL: %w", err)
-		}
-		cfg.CacheResetInterval = d
-	}
 	if v := lookup("REWARDS_HISTORY_FILE"); v != "" {
 		cfg.RewardsHistoryFile = v
 	}
