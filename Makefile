@@ -34,7 +34,7 @@ docker-build:
 
 # Build and run Docker container
 docker-run: docker-build
-	docker run -p 8080:8080 --env-file $(CURDIR)/.env -v $(CURDIR)/data:/app/data --restart=unless-stopped --name beacon-rewards -d beacon-rewards
+	docker run -p $(SERVER_PORT):$(SERVER_PORT) --env-file $(CURDIR)/.env -v $(CURDIR)/data:/app/data --restart=unless-stopped --name beacon-rewards -d beacon-rewards
 
 docker-stop:
 	docker stop beacon-rewards
