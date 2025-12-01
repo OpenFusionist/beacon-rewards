@@ -84,7 +84,7 @@
                     },
                     {
                         "type": "string",
-                        "default": "total_deposit",
+                        "default": "total_active_effective_balance",
                         "description": "Sort field (total_deposit,withdrawal_address,validators_total, slashed, voluntary_exited, active, total_active_effective_balance)",
                         "name": "sort_by",
                         "in": "query"

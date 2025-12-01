@@ -188,7 +188,7 @@ func (s *Server) topDepositsHandler(c *gin.Context) {
 		return
 	}
 
-	s.respondWithTop(c, func(ctx context.Context, limit int, sortBy string, order string) (any, error) {
+	s.respondWithTop(c, "total_deposit", func(ctx context.Context, limit int, sortBy string, order string) (any, error) {
 		stats, err := s.doraDB.TopDepositorAddresses(ctx, limit, sortBy, order)
 		if err != nil {
 			return nil, err
@@ -203,7 +203,7 @@ func (s *Server) topDepositsHandler(c *gin.Context) {
 // @Tags         Deposits
 // @Produce      json
 // @Param        limit    query     int     false  "Number of results to return"  default(100)
-// @Param        sort_by  query     string  false  "Sort field (total_deposit,withdrawal_address,validators_total, slashed, voluntary_exited, active, total_active_effective_balance)"  default(total_deposit)
+// @Param        sort_by  query     string  false  "Sort field (total_deposit,withdrawal_address,validators_total, slashed, voluntary_exited, active, total_active_effective_balance)"  default(total_active_effective_balance)
 // @Param        order    query     string  false  "Sort order (asc|desc)"  default(desc)
 // @Success      200     {object}  map[string]interface{}
 // @Failure      503     {object}  map[string]string
@@ -214,7 +214,7 @@ func (s *Server) topWithdrawalsAPIHandler(c *gin.Context) {
 		return
 	}
 
-	s.respondWithTop(c, func(ctx context.Context, limit int, sortBy string, order string) (any, error) {
+	s.respondWithTop(c, "total_active_effective_balance", func(ctx context.Context, limit int, sortBy string, order string) (any, error) {
 		stats, err := s.doraDB.TopWithdrawalAddresses(ctx, limit, sortBy, order)
 		if err != nil {
 			return nil, err
@@ -548,10 +548,16 @@ func (s *Server) requestContext(c *gin.Context) (context.Context, context.Cancel
 	return context.WithTimeout(c.Request.Context(), timeout)
 }
 
-func (s *Server) respondWithTop(c *gin.Context, fetch func(context.Context, int, string, string) (any, error)) {
+func (s *Server) respondWithTop(c *gin.Context, defaultSortBy string, fetch func(context.Context, int, string, string) (any, error)) {
 	limit := s.limitParam(c)
 	sortBy := strings.TrimSpace(c.Query("sort_by"))
+	if sortBy == "" {
+		sortBy = defaultSortBy
+	}
 	order := strings.ToLower(strings.TrimSpace(c.Query("order")))
+	if order == "" {
+		order = "desc"
+	}
 	ctx, cancel := s.requestContext(c)
 	defer cancel()
 
@@ -625,7 +631,7 @@ func (s *Server) topWithdrawalsPageOrAPIHandler(c *gin.Context) {
 	limit := s.limitParam(c)
 	sortBy := strings.TrimSpace(c.Query("sort_by"))
 	if sortBy == "" {
-		sortBy = "total_deposit"
+		sortBy = "total_active_effective_balance"
 	}
 	order := strings.ToLower(strings.TrimSpace(c.Query("order")))
 	if order == "" {
@@ -661,7 +667,7 @@ func (s *Server) topWithdrawalsTableHandler(c *gin.Context) {
 	limit := s.limitParam(c)
 	sortBy := strings.TrimSpace(c.Query("sort_by"))
 	if sortBy == "" {
-		sortBy = "total_deposit"
+		sortBy = "total_active_effective_balance"
 	}
 	order := strings.ToLower(strings.TrimSpace(c.Query("order")))
 	if order == "" {

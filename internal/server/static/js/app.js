@@ -315,18 +315,18 @@ async function renderTopWithdrawals({ url, ticket, cleaner }) {
     const params = url.searchParams;
     const state = {
         limit: Math.max(1, Number(params.get('limit')) || 30),
-        sortBy: params.get('sort_by') || 'total_deposit',
+        sortBy: params.get('sort_by') || 'total_active_effective_balance',
         order: params.get('order') === 'asc' ? 'asc' : 'desc',
     };
 
     const sortLabels = {
+        total_active_effective_balance: 'Total effective balance',
         total_deposit: 'Total deposit',
         withdrawal_address: 'Withdrawal address',
         validators_total: 'Validators funded',
         active: 'Active validators',
         slashed: 'Slashed validators',
         voluntary_exited: 'Voluntary exits',
-        total_active_effective_balance: 'Total effective balance',
     };
 
     const resolveSortLabel = (key) => sortLabels[key] || key;
@@ -375,12 +375,12 @@ async function renderTopWithdrawals({ url, ticket, cleaner }) {
                         ` : '-'}
                     </td>
                     <td>${item.label || '-'}</td>
+                    <td>${formatGweiToAce(item.total_active_effective_balance)}</td>
                     <td>${formatGweiToAce(item.total_deposit)}</td>
                     <td>${formatNumber(item.validators_total)}</td>
                     <td><span class="badge badge-success">${formatNumber(item.active)}</span></td>
                     <td>${Number(item.slashed) > 0 ? `<span class="badge badge-danger">${formatNumber(item.slashed)}</span>` : '0'}</td>
                     <td>${Number(item.voluntary_exited) > 0 ? `<span class="badge badge-warning">${formatNumber(item.voluntary_exited)}</span>` : '0'}</td>
-                    <td>${formatGweiToAce(item.total_active_effective_balance)}</td>
                 </tr>
             `;
         }).join('');
@@ -392,27 +392,27 @@ async function renderTopWithdrawals({ url, ticket, cleaner }) {
                     <col class="col-rank">
                     <col class="col-withdrawal">
                     <col class="col-label">
+                    <col class="col-effective-balance">
                     <col class="col-total-deposit">
                     <col class="col-validators">
                     <col class="col-active">
                     <col class="col-slashed">
                     <col class="col-voluntary">
-                        <col class="col-effective-balance">
-                    </colgroup>
-                <thead>
-                    <tr>
-                        <th><abbr class="header-abbr" data-tooltip="Ranking" aria-label="Ranking position">Rank</abbr></th>
-                        <th><abbr class="header-abbr" data-tooltip="Withdrawal address" aria-label="Withdrawal address">Wdr</abbr></th>
-                        <th><abbr class="header-abbr" data-tooltip="Label for the withdrawal address" aria-label="Label for the withdrawal address">Label</abbr></th>
-                        <th class="sortable" data-sort="total_deposit"><abbr class="header-abbr" data-tooltip="Total deposit amount (ACE)" aria-label="Total deposit amount (ACE)">Total deposited</abbr></th>
-                        <th class="sortable" data-sort="validators_total"><abbr class="header-abbr" data-tooltip="Total Number of validators" aria-label="Total Number of validators">Tot</abbr></th>
-                        <th class="sortable" data-sort="active"><abbr class="header-abbr" data-tooltip="Active validators" aria-label="Active validators">Act</abbr></th>
-                        <th class="sortable" data-sort="slashed"><abbr class="header-abbr" data-tooltip="Number of slashed validators" aria-label="Number of slashed validators">Sla</abbr></th>
-                        <th class="sortable" data-sort="voluntary_exited"><abbr class="header-abbr" data-tooltip="Number of voluntarily exited validators" aria-label="Number of voluntarily exited validators">Ex</abbr></th>
-                        <th class="sortable" data-sort="total_active_effective_balance"><abbr class="header-abbr" data-tooltip="Total effective balance (ACE)" aria-label="Total effective balance (ACE)">Total EB</abbr></th>
-                    </tr>
-                </thead>
-                <tbody>${rows}</tbody>
+                </colgroup>
+            <thead>
+                <tr>
+                    <th><abbr class="header-abbr" data-tooltip="Ranking" aria-label="Ranking position">Rank</abbr></th>
+                    <th><abbr class="header-abbr" data-tooltip="Withdrawal address" aria-label="Withdrawal address">Wdr</abbr></th>
+                    <th><abbr class="header-abbr" data-tooltip="Label for the withdrawal address" aria-label="Label for the withdrawal address">Label</abbr></th>
+                    <th class="sortable" data-sort="total_active_effective_balance"><abbr class="header-abbr" data-tooltip="Total effective balance (ACE)" aria-label="Total effective balance (ACE)">EB</abbr></th>
+                    <th class="sortable" data-sort="total_deposit"><abbr class="header-abbr" data-tooltip="Total deposit amount (ACE)" aria-label="Total deposit amount (ACE)">Dep</abbr></th>
+                    <th class="sortable" data-sort="validators_total"><abbr class="header-abbr" data-tooltip="Total Number of validators" aria-label="Total Number of validators">Tot</abbr></th>
+                    <th class="sortable" data-sort="active"><abbr class="header-abbr" data-tooltip="Active validators" aria-label="Active validators">Act</abbr></th>
+                    <th class="sortable" data-sort="slashed"><abbr class="header-abbr" data-tooltip="Number of slashed validators" aria-label="Number of slashed validators">Sla</abbr></th>
+                    <th class="sortable" data-sort="voluntary_exited"><abbr class="header-abbr" data-tooltip="Number of voluntarily exited validators" aria-label="Number of voluntarily exited validators">Ex</abbr></th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
             </table>
         </div>
         `;

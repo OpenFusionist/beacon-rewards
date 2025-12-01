@@ -5,18 +5,21 @@
             <col class="col-rank">
             <col class="col-withdrawal">
             <col class="col-label">
+            <col class="col-effective-balance">
             <col class="col-total-deposit">
             <col class="col-validators">
             <col class="col-active">
             <col class="col-slashed">
             <col class="col-voluntary">
-            <col class="col-effective-balance">
         </colgroup>
         <thead>
             <tr>
                 <th><abbr class="header-abbr" data-tooltip="Ranking position" aria-label="Ranking position">Rank</abbr></th>
                 <th><abbr class="header-abbr" data-tooltip="Withdrawal address (derived from credentials)" aria-label="Withdrawal address">Wdr</abbr></th>
                 <th><abbr class="header-abbr" data-tooltip="Optional label for the withdrawal address" aria-label="Label for the withdrawal address">Label</abbr></th>
+                <th class="sortable" data-sort-by="total_active_effective_balance" data-order="{{if eq .sort_by "total_active_effective_balance"}}{{.order}}{{end}}">
+                    <abbr class="header-abbr" data-tooltip="Total effective balance (ACE)" aria-label="Total effective balance (ACE)">EB</abbr>
+                </th>
                 <th class="sortable" data-sort-by="total_deposit" data-order="{{if eq .sort_by "total_deposit"}}{{.order}}{{end}}">
                     <abbr class="header-abbr" data-tooltip="Total deposit amount (ACE)" aria-label="Total deposit amount (ACE)">Dep</abbr>
                 </th>
@@ -31,9 +34,6 @@
                 </th>
                 <th class="sortable" data-sort-by="voluntary_exited" data-order="{{if eq .sort_by "voluntary_exited"}}{{.order}}{{end}}">
                     <abbr class="header-abbr" data-tooltip="Number of voluntarily exited validators" aria-label="Number of voluntarily exited validators">Ex</abbr>
-                </th>
-                <th class="sortable" data-sort-by="total_active_effective_balance" data-order="{{if eq .sort_by "total_active_effective_balance"}}{{.order}}{{end}}">
-                    <abbr class="header-abbr" data-tooltip="Total effective balance (ACE)" aria-label="Total effective balance (ACE)">Tot</abbr>
                 </th>
             </tr>
         </thead>
@@ -59,12 +59,12 @@
                     </div>
                 </td>
                 <td>{{if $item.label}}{{$item.label}}{{else}}-{{end}}</td>
+                <td>{{formatGweiToAce $item.total_active_effective_balance}}</td>
                 <td>{{formatGweiToAce $item.total_deposit}}</td>
                 <td>{{$item.validators_total}}</td>
                 <td><span class="badge badge-success">{{$item.active}}</span></td>
                 <td>{{if gt $item.slashed 0}}<span class="badge badge-danger">{{$item.slashed}}</span>{{else}}0{{end}}</td>
                 <td>{{if gt $item.voluntary_exited 0}}<span class="badge badge-warning">{{$item.voluntary_exited}}</span>{{else}}0{{end}}</td>
-                <td>{{formatGweiToAce $item.total_active_effective_balance}}</td>
             </tr>
             {{end}}
         </tbody>
