@@ -208,7 +208,7 @@ function footnotesAddress() {
                 <li><strong>Total rewards</strong>: Sum of CL and EL rewards (ACE)</li>
                 <li><strong>Estimated 31d rewards</strong>: Estimated rewards for the past 31 days based on network APR (ACE)</li>
                 <li><strong>Total effective balance</strong>: Sum of effective balances for all active validators (ACE)</li>
-                <li><strong>Weighted average stake time</strong>: Average staking duration weighted by deposit amount</li>
+                <li><strong>Weighted average stake time</strong>: Active validators average staking duration weighted by effective balance</li>
                 <li><strong>Window</strong>: Reporting window used for the calculation</li>
             </ol>
         </div>

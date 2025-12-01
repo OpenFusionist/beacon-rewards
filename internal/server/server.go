@@ -442,7 +442,7 @@ func (s *Server) addressRewardsHandler(c *gin.Context) {
 		if len(allValidatorIndices) == 0 {
 			return
 		}
-		if avg, err := s.doraDB.GetWeightedAverageStakeTime(ctx, allValidatorIndices); err == nil {
+		if avg, err := s.doraDB.GetWeightedAverageStakeTime(ctx, activeValidatorIndices); err == nil {
 			weightedAvgStakeTime = avg
 		} else {
 			slog.Error("Failed to calculate weighted average stake time", "error", err)

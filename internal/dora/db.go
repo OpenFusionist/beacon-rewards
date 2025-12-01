@@ -2,10 +2,12 @@ package dora
 
 import (
 	"beacon-rewards/internal/config"
+	"beacon-rewards/internal/utils"
 	"context"
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -562,7 +564,7 @@ WHERE activation_epoch <= $1 AND exit_epoch > $1
 }
 
 // GetWeightedAverageStakeTime calculates the weighted average stake time (duration) for the given validator indices.
-// Formula: sum(amount * (now - block_time)) / sum(amount)
+// Formula: sum(effective_balance * (now - activation_time)) / sum(effective_balance)
 func (d *DB) GetWeightedAverageStakeTime(ctx context.Context, indices []uint64) (int64, error) {
 	if d == nil || d.db == nil || len(indices) == 0 {
 		return 0, nil
@@ -578,23 +580,61 @@ func (d *DB) GetWeightedAverageStakeTime(ctx context.Context, indices []uint64) 
 		ids = append(ids, int64(idx))
 	}
 
-	row := d.db.QueryRowContext(ctx, `
-SELECT
-  COALESCE(
-    SUM(dt.amount::numeric * (EXTRACT(EPOCH FROM NOW())::bigint - dt.block_time)::numeric) / NULLIF(SUM(dt.amount::numeric), 0),
-    0
-  )::bigint
-FROM deposit_txs dt
-JOIN validators v ON dt.publickey = v.pubkey
-WHERE v.validator_index = ANY($1)
+	rows, err := d.db.QueryContext(ctx, `
+SELECT effective_balance, activation_epoch
+FROM validators
+WHERE validator_index = ANY($1) AND activation_epoch IS NOT NULL
 `, pq.Array(ids))
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
 
-	var weightedAvg int64
-	if err := row.Scan(&weightedAvg); err != nil {
+	var totalWeightedSeconds float64
+	var totalWeight float64
+	now := float64(time.Now().Unix())
+	genesis := utils.GenesisTimestamp()
+	secondsPerEpoch := int64(utils.SLOTS_PER_EPOCH * utils.SECONDS_PER_SLOT)
+
+	for rows.Next() {
+		var (
+			eff int64
+			act int64
+		)
+		if err := rows.Scan(&eff, &act); err != nil {
+			return 0, err
+		}
+
+		// Skip inactive or zero balance
+		if eff <= 0 {
+			continue
+		}
+
+		epoch := ConvertInt64ToUint64(act)
+		// Calculate activation time (start of activation epoch)
+		// time = genesis + epoch * seconds_per_epoch
+		startTime := float64(genesis + int64(epoch)*secondsPerEpoch)
+
+		if startTime > now {
+			continue
+		}
+
+		weight := float64(eff)
+		duration := now - startTime
+
+		totalWeightedSeconds += weight * duration
+		totalWeight += weight
+	}
+
+	if err := rows.Err(); err != nil {
 		return 0, err
 	}
 
-	return weightedAvg, nil
+	if totalWeight == 0 {
+		return 0, nil
+	}
+
+	return int64(totalWeightedSeconds / totalWeight), nil
 }
 
 // ConvertInt64ToUint64 reverses the -2^63 shift applied to epoch fields stored in Dora.
