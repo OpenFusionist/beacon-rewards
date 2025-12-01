@@ -607,10 +607,27 @@ footer {
 }
 
 .footer-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    white-space: nowrap;
+}
+
+.footer-tag {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-3);
-    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--radius-md);
+    background-color: var(--color-surface-muted);
+    color: var(--text-secondary);
+}
+
+.footer-tag a {
+    color: var(--color-primary);
+    font-weight: 600;
 }
 
 /* Helper Text with Tooltip */
