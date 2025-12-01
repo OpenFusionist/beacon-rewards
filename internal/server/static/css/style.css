@@ -606,6 +606,13 @@ footer {
     font-size: 0.95rem;
 }
 
+.footer-content {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
 /* Helper Text with Tooltip */
 .help-text {
     position: relative;
