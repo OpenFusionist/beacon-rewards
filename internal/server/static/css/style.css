@@ -598,36 +598,36 @@ button:disabled {
 /* Footer */
 footer {
     margin-top: auto;
-    padding: var(--space-5) 0;
-    background-color: var(--card-bg);
+    padding: var(--space-4) 0;
+    background-color: transparent;
     border-top: var(--border-width) solid var(--border-color);
     text-align: center;
     color: var(--text-secondary);
-    font-size: 0.95rem;
+    font-size: 0.9rem;
 }
 
 .footer-content {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--space-3);
-    white-space: nowrap;
+    gap: var(--space-2);
+    flex-wrap: wrap;
 }
 
 .footer-tag {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    border: var(--border-width) solid var(--border-color);
-    border-radius: var(--radius-md);
-    background-color: var(--color-surface-muted);
+    gap: var(--space-1);
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background-color: transparent;
     color: var(--text-secondary);
 }
 
 .footer-tag a {
     color: var(--color-primary);
-    font-weight: 600;
+    font-weight: 500;
 }
 
 /* Helper Text with Tooltip */
