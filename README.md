@@ -77,4 +77,4 @@ Full request/response shapes are documented in Swagger (`/swagger/index.html`).
 
 ## Contributing, and license
 - See `CONTRIBUTING.md` for workflow and tooling.
-- Licensed under the Apache License 2.0 (see `LICENSE`).
+- Licensed under the GNU Affero General Public License v3.0 (see `LICENSE`).
