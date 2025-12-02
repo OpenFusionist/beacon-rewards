@@ -2,14 +2,9 @@
 
 A high-performance validator reward statistics service for Ethereum validators. Tracks and caches validator rewards, providing a RESTful API for querying reward data and deposit analytics.This repo contains both backend (Go) and frontend. Set `ENABLE_FRONTEND=false` to run backend API only.
 
-## Key Features
+## Why We Built Beacon Rewards
 
-- **No Beacon Explorer API/DB dependency** – Beacon Explorer services are expensive to maintain and operate; this lightweight alternative queries reward data directly from your own infrastructure
-- **Direct Beacon Node RPC** – fetches consensus layer rewards via standard beacon node endpoints (attestation rewards, sync committee rewards, block rewards, proposer assignments)
-- **Execution Node RPC** – calculates execution layer rewards (transaction fees) from your execution client
-- **Dora PostgreSQL** – leverages [Dora](https://github.com/ethpandaops/dora) indexer database for deposit/validator metadata lookups
-
-
+After nearly two years of running the Endurance beacon explorer, we found the upstream Beaconchain stack both hard to maintain (v1 errors and heavy technical debt) and hard to adopt (v2 relies on closed-source internal tooling) while locking operators into an expensive Bigtable/Redis/ClickHouse/Postgres footprint. We built this lighter service to pair with Dora and our own beacon/execution nodes instead of relying on a costly, half-open explorer; see the blog post for the [full story](https://devlog.fusionist.io/posts/we-built-a-simple-tool-to-pair-with-dora-aiming-to-replace-the-current-beacon-explorer/).
 
 
 ## Quick Start
