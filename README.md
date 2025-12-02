@@ -36,8 +36,8 @@ Set environment variables or use `.env` (see `.env.example`):
 | `SERVER_ADDRESS` | Listen address | `0.0.0.0` |
 | `SERVER_PORT` | Listen port | `8080` |
 | `ENABLE_FRONTEND` | Serve HTML pages/static assets | `true` |
-| `BEACON_NODE_URL` | Beacon chain node endpoint | `http://localhost:5052` |
-| `EXECUTION_NODE_URL` | Execution layer node endpoint | `http://localhost:8545` |
+| `BEACON_NODE_URL` | Beacon chain node endpoint(archive node) | `http://localhost:5052` |
+| `EXECUTION_NODE_URL` | Execution layer node endpoint (archive node) | `http://localhost:8545` |
 | `DORA_PG_URL` | Dora Postgres URL (required for deposit endpoints) | `postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable` |
 | `DEPOSITOR_LABELS_FILE` | YAML mapping addresses to labels | `depositor-name.yaml` |
 | `BACKFILL_LOOKBACK` | Relative backfill window before startup (duration like `1h`; empty uses today's 00:00 UTC+8) | _unset_ |
