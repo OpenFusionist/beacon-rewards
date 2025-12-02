@@ -2,11 +2,13 @@ package main
 
 import (
 	_ "beacon-rewards/docs"
+	"beacon-rewards/internal/beacon"
 	"beacon-rewards/internal/config"
 	"beacon-rewards/internal/dora"
 	"beacon-rewards/internal/rewards"
 	"beacon-rewards/internal/server"
 	"beacon-rewards/internal/utils"
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
@@ -57,9 +59,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Configure genesis timestamp for epoch conversions.
-	utils.SetGenesisTimestamp(cfg.GenesisTimestamp)
-	logConfig(cfg)
+	genesisTimestamp, err := beacon.FetchGenesisTimestamp(context.Background(), cfg.BeaconNodeURL, cfg.RequestTimeout)
+	if err != nil {
+		slog.Error("Failed to fetch genesis timestamp from beacon node", "error", err, "beacon_node", cfg.BeaconNodeURL)
+		os.Exit(1)
+	}
+
+	utils.SetGenesisTimestamp(genesisTimestamp)
+	logConfig(cfg, genesisTimestamp)
 
 	var doraDB *dora.DB
 	if db, err := dora.New(cfg); err != nil {
@@ -104,7 +111,7 @@ func main() {
 	slog.Info("Shutdown complete")
 }
 
-func logConfig(cfg *config.Config) {
+func logConfig(cfg *config.Config, genesisTimestamp int64) {
 	args := []any{
 		"listen_address", cfg.ListenAddress(),
 		"beacon_node", cfg.BeaconNodeURL,
@@ -117,7 +124,7 @@ func logConfig(cfg *config.Config) {
 		"default_api_limit", cfg.DefaultAPILimit,
 		"depositor_labels_file", cfg.DepositorLabelsFile,
 		"frontend_enabled", cfg.EnableFrontend,
-		"genesis_timestamp", cfg.GenesisTimestamp,
+		"genesis_timestamp", genesisTimestamp,
 	}
 
 	slog.Info("Configuration loaded", args...)

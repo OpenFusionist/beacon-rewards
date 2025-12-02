@@ -107,7 +107,7 @@ func TestRespondWithTop(t *testing.T) {
 	c.Request = httptest.NewRequest("GET", "/?limit=3&sort_by=validators_total&order=asc", nil)
 
 	called := false
-	s.respondWithTop(c, func(ctx context.Context, limit int, sortBy, order string) (any, error) {
+	s.respondWithTop(c, "total_deposit", func(ctx context.Context, limit int, sortBy, order string) (any, error) {
 		called = true
 		if limit != 3 || sortBy != "validators_total" || order != "asc" {
 			t.Fatalf("unexpected args: limit=%d sortBy=%s order=%s", limit, sortBy, order)
@@ -140,7 +140,7 @@ func TestRespondWithTop(t *testing.T) {
 	w = httptest.NewRecorder()
 	c, _ = gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET", "/", nil)
-	s.respondWithTop(c, func(context.Context, int, string, string) (any, error) {
+	s.respondWithTop(c, "total_deposit", func(context.Context, int, string, string) (any, error) {
 		return nil, errors.New("boom")
 	})
 	if w.Code != http.StatusInternalServerError {

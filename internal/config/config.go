@@ -1,7 +1,6 @@
 package config
 
 import (
-	"beacon-rewards/internal/utils"
 	"fmt"
 	"os"
 	"strconv"
@@ -17,7 +16,6 @@ type Config struct {
 	DefaultAPILimit     int
 	EnableFrontend      bool
 	DepositorLabelsFile string
-	GenesisTimestamp    int64
 
 	// Database configuration.
 	DoraPGURL string
@@ -50,7 +48,6 @@ func DefaultConfig() *Config {
 		DefaultAPILimit:         100,
 		EnableFrontend:          true,
 		DepositorLabelsFile:     "depositor-name.yaml",
-		GenesisTimestamp:        utils.DefaultGenesisTimestamp,
 		DoraPGURL:               "postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable",
 		BeaconNodeURL:           "http://localhost:5052",
 		ExecutionNodeURL:        "http://localhost:8545",
@@ -108,16 +105,6 @@ func LoadFromEnv(lookup func(string) string) (*Config, error) {
 	}
 	if v := lookup("DEPOSITOR_LABELS_FILE"); v != "" {
 		cfg.DepositorLabelsFile = v
-	}
-	if v := lookup("GENESIS_TIMESTAMP"); v != "" {
-		n, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("GENESIS_TIMESTAMP: %w", err)
-		}
-		if n <= 0 {
-			return nil, fmt.Errorf("GENESIS_TIMESTAMP: must be positive")
-		}
-		cfg.GenesisTimestamp = n
 	}
 	if v := lookup("DORA_PG_URL"); v != "" {
 		cfg.DoraPGURL = v

@@ -41,7 +41,6 @@ Set environment variables or use `.env` (see `.env.example`):
 | `DORA_PG_URL` | Dora Postgres URL (required for deposit endpoints) | `postgres://postgres:postgres@127.0.0.1:5432/dora?sslmode=disable` |
 | `DEPOSITOR_LABELS_FILE` | YAML mapping addresses to labels | `depositor-name.yaml` |
 | `BACKFILL_LOOKBACK` | Relative backfill window before startup (duration like `1h`; empty uses today's 00:00 UTC+8) | _unset_ |
-| `GENESIS_TIMESTAMP` | Beacon chain genesis timestamp (Unix seconds) for epoch/time conversion | `1709532000` |
 | `EPOCH_CHECK_INTERVAL` | Polling interval for live sync | `12s` |
 | `EPOCH_PROCESS_MAX_RETRIES` | Max retries per epoch before skipping | `5` |
 | `EPOCH_PROCESS_BASE_BACKOFF` | Initial backoff for epoch retries | `2s` |
@@ -50,6 +49,8 @@ Set environment variables or use `.env` (see `.env.example`):
 | `REWARDS_HISTORY_FILE` | Path to append-only reward history log | `data/reward_history.jsonl` |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
 | `LOG_FORMAT` | `text` or `json` | `text` |
+
+- Genesis timestamp is fetched from the configured beacon node via `/eth/v1/beacon/genesis`; no configuration is required.
 
 - Ensure the `data/` directory is writable if you keep the default `REWARDS_HISTORY_FILE`.
 
