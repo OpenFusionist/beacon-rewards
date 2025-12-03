@@ -66,6 +66,19 @@ Set environment variables or use `.env` (see `.env.example`):
 
 Full request/response shapes are documented in Swagger (`/swagger/index.html`).
 
+## Adding Address label
+
+We support labeling depositor/withdrawal addresses (e.g., exchanges, staking pools) to make them easily identifiable in the UI and API.
+
+To add or update a label:
+1. Fork this repository.
+2. Edit the `depositor-name.yaml` file.
+3. Add a new entry or update an existing one:
+   ```yaml
+   "0xYourAddressHere": "Your Label Name"
+   ```
+4. Submit a Pull Request.
+
 ## Development
 - Run tests: `make test`
 - Lint: `make lint`
