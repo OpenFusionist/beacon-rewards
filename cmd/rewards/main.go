@@ -114,8 +114,6 @@ func main() {
 func logConfig(cfg *config.Config, genesisTimestamp int64) {
 	args := []any{
 		"listen_address", cfg.ListenAddress(),
-		"beacon_node", cfg.BeaconNodeURL,
-		"execution_node", cfg.ExecutionNodeURL,
 		"cache_reset_interval", cfg.CacheResetInterval,
 		"epoch_check_interval", cfg.EpochCheckInterval,
 		"backfill_concurrency", cfg.BackfillConcurrency,
