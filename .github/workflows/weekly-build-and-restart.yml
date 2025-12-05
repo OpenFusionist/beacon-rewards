@@ -1,0 +1,78 @@
+name: Weekly Build and Restart
+
+on:
+  schedule:
+    - cron: "0 1 * * MON"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-restart:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check commits in last 7 days
+        id: commit-check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { data: repoInfo } = await github.rest.repos.get({ owner, repo });
+            const branch = repoInfo.default_branch;
+            const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+            const commits = await github.paginate(
+              github.rest.repos.listCommits,
+              { owner, repo, sha: branch, since }
+            );
+
+            const hasChanges = commits.length > 0;
+            core.info(`Default branch: ${branch}`);
+            core.info(`Commits since ${since}: ${commits.length}`);
+
+            core.setOutput("branch", branch);
+            core.setOutput("has_changes", hasChanges ? "true" : "false");
+            core.setOutput("since", since);
+
+      - name: Skip when no recent commits
+        if: steps.commit-check.outputs.has_changes != 'true'
+        run: echo "No commits in the last week; skipping build and restart."
+
+      - name: Build and restart on remote host (Docker)
+        if: steps.commit-check.outputs.has_changes == 'true'
+        uses: appleboy/ssh-action@v1.0.0
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_BRANCH: ${{ secrets.DEPLOY_BRANCH }}
+          DEFAULT_BRANCH: ${{ steps.commit-check.outputs.branch }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          envs: DEPLOY_PATH,DEPLOY_BRANCH,DEFAULT_BRANCH
+          script: |
+            set -euo pipefail
+
+            DEPLOY_PATH="${DEPLOY_PATH:-}"
+            if [ -z "${DEPLOY_PATH}" ]; then
+              echo "DEPLOY_PATH is required (set it as a secret)." >&2
+              exit 1
+            fi
+
+            BRANCH="${DEPLOY_BRANCH:-$DEFAULT_BRANCH}"
+            CONTAINER_NAME="beacon-rewards"
+
+            cd "${DEPLOY_PATH}"
+            git fetch origin "${BRANCH}"
+            git checkout "${BRANCH}"
+            git reset --hard "origin/${BRANCH}"
+
+            # Rebuild image and restart container
+            docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+            make docker-run
+
+            # Show container status/logs for quick diagnostics
+            docker ps --filter "name=${CONTAINER_NAME}"
+            docker logs --tail 10 "${CONTAINER_NAME}"
