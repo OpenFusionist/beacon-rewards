@@ -211,8 +211,8 @@ func (s *Service) runLiveSync() {
 		}
 		// sync from cached nextEpoch to safeHead
 		for epoch := nextEpoch; epoch <= safeHead; epoch++ {
-			if err := s.processEpochWithRetry(epoch); err == nil {
-
+			if err := s.processEpochWithRetry(epoch); err != nil {
+				slog.Error("Live sync epoch failed after retries", "epoch", epoch, "error", err)
 			}
 		}
 
@@ -614,10 +614,12 @@ func (s *Service) persistSnapshot(snap *NetworkRewardSnapshot) {
 	defer s.historyMu.Unlock()
 	_ = os.MkdirAll(filepath.Dir(s.historyPath), 0o755)
 	f, err := os.OpenFile(s.historyPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err == nil {
-		_ = json.NewEncoder(f).Encode(snap)
-		f.Close()
+	if err != nil {
+		slog.Error("Failed to open rewards history file", "path", s.historyPath, "error", err)
+		return
 	}
+	_ = json.NewEncoder(f).Encode(snap)
+	_ = f.Close()
 }
 
 func (s *Service) setCacheWindowStart(t time.Time) {
