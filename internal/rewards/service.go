@@ -380,6 +380,9 @@ func (s *Service) NetworkRewardHistory() ([]NetworkRewardSnapshot, error) {
 			entries = append(entries, e)
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan rewards history: %w", err)
+	}
 	return entries, nil
 }
 

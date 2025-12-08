@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -190,5 +191,20 @@ func TestStartEpochDefaultsToCacheWindow(t *testing.T) {
 
 	if got := svc.startEpoch(now); got != expected {
 		t.Fatalf("default start epoch mismatch: got %d want %d", got, expected)
+	}
+}
+
+func TestNetworkRewardHistoryScannerError(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.RewardsHistoryFile = filepath.Join(t.TempDir(), "history.jsonl")
+	svc := NewService(cfg)
+
+	oversizedLine := strings.Repeat("x", bufio.MaxScanTokenSize+16)
+	if err := os.WriteFile(cfg.RewardsHistoryFile, []byte(oversizedLine+"\n"), 0o644); err != nil {
+		t.Fatalf("failed to write history file: %v", err)
+	}
+
+	if _, err := svc.NetworkRewardHistory(); err == nil {
+		t.Fatalf("expected scanner error for oversized history line")
 	}
 }
