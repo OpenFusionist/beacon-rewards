@@ -316,7 +316,7 @@ async function renderTopWithdrawals({ url, ticket, cleaner }) {
     const state = {
         limit: Math.max(1, Number(params.get('limit')) || 30),
         sortBy: params.get('sort_by') || 'total_active_effective_balance',
-        order: params.get('order') === 'asc' ? 'asc' : 'desc',
+        order: 'desc',
     };
 
     const sortLabels = {
@@ -460,7 +460,7 @@ async function renderTopWithdrawals({ url, ticket, cleaner }) {
 
         state.limit = payload.limit || state.limit;
         state.sortBy = payload.sort_by || state.sortBy;
-        state.order = payload.order === 'asc' ? 'asc' : 'desc';
+        state.order = 'desc';
 
         const sortLabel = resolveSortLabel(state.sortBy);
         const orderLabel = state.order === 'asc' ? 'ascending' : 'descending';
@@ -477,12 +477,10 @@ async function renderTopWithdrawals({ url, ticket, cleaner }) {
         const sortKey = th.getAttribute('data-sort');
         if (!sortKey) return;
 
-        if (sortKey === state.sortBy) {
-            state.order = state.order === 'asc' ? 'desc' : 'asc';
-        } else {
+        if (sortKey !== state.sortBy) {
             state.sortBy = sortKey;
-            state.order = 'desc';
         }
+        state.order = 'desc';
         fetchTable();
     };
 
