@@ -21,6 +21,11 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
+const (
+	rateLimitRPS   = 100.0
+	rateLimitBurst = 0 // 0 uses ceil(rps) as burst
+)
+
 // @title           Beacon Rewards API
 // @version         1.0
 // @description     REST API for Ethereum validator rewards and deposits analytics.
@@ -47,6 +52,9 @@ func NewServer(cfg *config.Config, rewardsService *rewards.Service, doraDB *dora
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(loggingMiddleware())
+	limiter := newIPRateLimiter(rateLimitRPS, rateLimitBurst)
+	router.Use(limiter.middleware())
+	slog.Info("Rate limiting enabled", "rps", rateLimitRPS, "burst", limiter.Burst())
 
 	depositorLabels, err := loadDepositorLabels(cfg.DepositorLabelsFile)
 	if err != nil {
