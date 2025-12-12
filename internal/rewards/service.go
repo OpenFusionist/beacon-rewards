@@ -390,11 +390,6 @@ func (s *Service) GetTotalRewards(validatorIndices []uint64, effectiveBalances m
 	s.cacheMux.RLock()
 	defer s.cacheMux.RUnlock()
 
-	start, end := s.GetRewardWindow()
-	duration := end.Sub(start).Seconds()
-	if duration <= 0 {
-		duration = s.config.CacheResetInterval.Seconds()
-	}
 	// use network snapshot for project APR calculation
 	snapshot := s.computeNetworkSnapshotLocked(time.Now())
 
